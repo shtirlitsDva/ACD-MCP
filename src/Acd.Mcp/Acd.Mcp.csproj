@@ -9,7 +9,16 @@
          plugin folder (DevReload's AssemblyDependencyResolver path). -->
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <!-- WinForms is enabled solely for Clipboard access in the
+         throwaway ACDMCP_EVAL test command (multi-line code input).
+         Removed when the named-pipe listener replaces it in Slice 3. -->
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
+  </ItemGroup>
 
   <PropertyGroup Condition=" '$(Platform)' == 'x64' ">
     <DebugSymbols>true</DebugSymbols>
