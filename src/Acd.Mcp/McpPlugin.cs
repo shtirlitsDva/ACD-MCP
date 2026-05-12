@@ -1,7 +1,9 @@
+using System.Diagnostics;
+using Acd.Mcp.Pipe;
 using Acd.Mcp.Scripting;
-using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
+using SynchronizationContext = System.Threading.SynchronizationContext;
 
 [assembly: ExtensionApplication(typeof(Acd.Mcp.McpPlugin))]
 
@@ -24,22 +26,34 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v2-slice2";
+        private const string Version = "v3-slice3";
 
-        // Static so the session survives across multiple [CommandMethod] invocations.
-        // DevReload's CommandRegistrar creates a new McpPlugin instance per non-static
-        // command call, so instance-level state would be discarded.
+        // Static so they survive across DevReload's per-call activator (it creates a
+        // fresh McpPlugin instance for each non-static [CommandMethod] call).
         private static ScriptSession? _session;
-        private static ScriptSession Session => _session ??= new ScriptSession();
+        private static PipeListener? _listener;
+        private static SynchronizationContext? _mainSync;
 
         public void Initialize()
         {
+            // Initialize() runs on AutoCAD's main thread, which has a
+            // WindowsFormsSynchronizationContext installed. Capture it now so the
+            // pipe listener (on a threadpool thread) can later Post() snippet
+            // execution back onto this thread.
+            _mainSync = SynchronizationContext.Current
+                ?? throw new InvalidOperationException(
+                    "No SynchronizationContext on main thread — cannot marshal pipe requests back.");
+
             Log($"Initialize() {Version}");
         }
 
         public void Terminate()
         {
+            try { _listener?.Stop(); } catch { }
+            _listener?.Dispose();
+            _listener = null;
             _session = null;
+            _mainSync = null;
             Log($"Terminate() {Version}");
         }
 
@@ -47,42 +61,57 @@ namespace Acd.Mcp
         public static void Ping()
         {
             var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-            ed?.WriteMessage($"\nACD-MCP pong {Version} @ {System.DateTime.Now:HH:mm:ss}\n");
+            ed?.WriteMessage($"\nACD-MCP pong {Version} @ {DateTime.Now:HH:mm:ss}\n");
         }
 
-        // Throwaway harness for Slice 2. Reads C# from the clipboard and runs it
-        // through the script session. Replaced by the named-pipe listener in Slice 3.
-        [CommandMethod("ACDMCP_EVAL")]
-        public static void Eval()
+        [CommandMethod("ACDMCP_START")]
+        public static void Start()
         {
             var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
             if (ed is null) return;
 
-            string code;
-            try
+            if (_mainSync is null)
             {
-                code = System.Windows.Forms.Clipboard.GetText();
-            }
-            catch (System.Exception ex)
-            {
-                ed.WriteMessage($"\n[ACD-MCP] Clipboard read failed: {ex.Message}\n");
+                ed.WriteMessage("\n[ACD-MCP] Cannot start: SynchronizationContext was not captured at Initialize().\n");
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(code))
+            _session ??= new ScriptSession();
+
+            if (_listener is { IsRunning: true })
             {
-                ed.WriteMessage("\n[ACD-MCP] Clipboard is empty.\n");
+                ed.WriteMessage($"\n[ACD-MCP] Already running on pipe '{_listener.PipeName}'.\n");
                 return;
             }
 
-            ed.WriteMessage($"\n[ACD-MCP] Eval ({code.Length} chars from clipboard)...\n");
+            _listener ??= new PipeListener(_mainSync, _session);
+            _listener.Start();
+            ed.WriteMessage($"\n[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.\n");
+        }
 
-            // We're on AutoCAD's main thread inside a [CommandMethod] — exactly where
-            // AutoCAD APIs need to run. Blocking with GetResult is safe because
-            // CSharpScript uses ConfigureAwait(false) internally; continuations land
-            // on the threadpool, not back on this thread.
-            var result = Session.ExecuteAsync(code).GetAwaiter().GetResult();
-            WriteResult(ed, result);
+        [CommandMethod("ACDMCP_STOP")]
+        public static void Stop()
+        {
+            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
+            if (_listener is null || !_listener.IsRunning)
+            {
+                ed?.WriteMessage("\n[ACD-MCP] Listener is not running.\n");
+                return;
+            }
+            _listener.Stop();
+            ed?.WriteMessage("\n[ACD-MCP] Listener stopped.\n");
+        }
+
+        [CommandMethod("ACDMCP_STATUS")]
+        public static void Status()
+        {
+            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
+            if (ed is null) return;
+            ed.WriteMessage($"\n[ACD-MCP] {Version}");
+            ed.WriteMessage($"\n  PID:        {Process.GetCurrentProcess().Id}");
+            ed.WriteMessage($"\n  Listener:   {(_listener is { IsRunning: true } ? $"running on '{_listener.PipeName}'" : "stopped")}");
+            ed.WriteMessage($"\n  Session:    {(_session is null ? "uninitialized" : "ready")}");
+            ed.WriteMessage("\n");
         }
 
         [CommandMethod("ACDMCP_RESET")]
@@ -93,30 +122,10 @@ namespace Acd.Mcp
             ed?.WriteMessage("\n[ACD-MCP] Script session reset.\n");
         }
 
-        private static void WriteResult(Editor ed, ExecuteResult result)
-        {
-            if (result.Success)
-            {
-                ed.WriteMessage($"\n[ACD-MCP] OK ({result.ElapsedMs} ms)");
-                if (result.ReturnValueRepr is not null)
-                    ed.WriteMessage($"\n=> {result.ReturnValueRepr}");
-                ed.WriteMessage("\n");
-            }
-            else
-            {
-                ed.WriteMessage($"\n[ACD-MCP] ERROR ({result.ElapsedMs} ms)");
-                foreach (var d in result.Diagnostics)
-                    ed.WriteMessage($"\n  {d.Severity} ({d.Line ?? 0},{d.Column ?? 0}): {d.Message}");
-                if (result.Stderr is not null)
-                    ed.WriteMessage($"\n  {result.Stderr}");
-                ed.WriteMessage("\n");
-            }
-        }
-
         private static void Log(string msg)
         {
             var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-            ed?.WriteMessage($"\n[ACD-MCP] {msg} @ {System.DateTime.Now:HH:mm:ss}\n");
+            ed?.WriteMessage($"\n[ACD-MCP] {msg} @ {DateTime.Now:HH:mm:ss}\n");
         }
     }
 }
