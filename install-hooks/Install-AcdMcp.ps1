@@ -108,6 +108,23 @@ function Test-Command([string] $name) {
     [bool](Get-Command $name -ErrorAction SilentlyContinue)
 }
 
+# Codex ships in three flavors that all read the same ~/.codex/config.toml:
+# CLI (`codex`), VS Code extension (openai.chatgpt), and macOS desktop app.
+# Detect any of them — the file-edit fallback writes to the shared config
+# either way.
+function Test-CodexInstalled {
+    if (Test-Command 'codex') { return $true }
+    if (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex')) { return $true }
+    $extDir = Join-Path $env:USERPROFILE '.vscode\extensions'
+    if (Test-Path -LiteralPath $extDir) {
+        $hit = Get-ChildItem -LiteralPath $extDir -Directory -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -like 'openai.chatgpt*' -or $_.Name -like 'openai.codex*' } |
+               Select-Object -First 1
+        if ($hit) { return $true }
+    }
+    return $false
+}
+
 function Test-AutoCadRunning {
     @('acad','acadlt','accoreconsole') |
         ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
@@ -263,6 +280,7 @@ function Register-Codex {
         New-Item -ItemType Directory -Path (Split-Path $cfg) -Force | Out-Null
         Set-Content -LiteralPath $cfg -Value $updated -NoNewline -Encoding UTF8
         Write-Ok "Registered via file edit at $cfg"
+        Write-Warn2 "Heads-up: the Codex VS Code extension sometimes fails to pick up config.toml changes (openai/codex#6465). If it doesn't see the server, reload the window with Ctrl+Shift+P -> 'Developer: Reload Window'."
     }
 }
 
@@ -379,7 +397,7 @@ $effective = if ($Clients -contains 'none') {
     @()
 } elseif ($Clients -contains 'auto') {
     $detected = @()
-    if ((Test-Command 'codex') -or (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex'))) {
+    if (Test-CodexInstalled) {
         $detected += 'codex'
     }
     if ((Test-Command 'code') -or (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Code\User')) -or

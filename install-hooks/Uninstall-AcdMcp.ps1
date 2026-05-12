@@ -47,6 +47,21 @@ function Fail($msg)        { Write-Host "    X   $msg" -ForegroundColor Red; thr
 function Test-Command([string] $name) {
     [bool](Get-Command $name -ErrorAction SilentlyContinue)
 }
+
+# Same detection as the installer — Codex CLI / VS Code extension /
+# Desktop app all share ~/.codex/config.toml.
+function Test-CodexInstalled {
+    if (Test-Command 'codex') { return $true }
+    if (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex')) { return $true }
+    $extDir = Join-Path $env:USERPROFILE '.vscode\extensions'
+    if (Test-Path -LiteralPath $extDir) {
+        $hit = Get-ChildItem -LiteralPath $extDir -Directory -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -like 'openai.chatgpt*' -or $_.Name -like 'openai.codex*' } |
+               Select-Object -First 1
+        if ($hit) { return $true }
+    }
+    return $false
+}
 function Test-AutoCadRunning {
     @('acad','acadlt','accoreconsole') |
         ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
@@ -169,7 +184,7 @@ $effective = if ($Clients -contains 'none') {
     @()
 } elseif ($Clients -contains 'auto') {
     $detected = @()
-    if ((Test-Command 'codex') -or (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex'))) {
+    if (Test-CodexInstalled) {
         $detected += 'codex'
     }
     if ((Test-Command 'code') -or (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Code\User')) -or

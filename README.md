@@ -70,7 +70,7 @@ ACD-MCP ships as a Claude Code plugin that doubles as a portable folder. The sam
 
    | Client            | File written                                                 |
    |-------------------|--------------------------------------------------------------|
-   | Codex CLI         | `~/.codex/config.toml` — `[mcp_servers.acd-mcp]`             |
+   | Codex (CLI, VS Code extension, or Desktop app — all share the same file) | `~/.codex/config.toml` — `[mcp_servers.acd-mcp]` |
    | GitHub Copilot    | `%APPDATA%\Code\User\mcp.json` — `servers.acd-mcp`           |
    | Claude Desktop    | `%APPDATA%\Claude\claude_desktop_config.json` — `mcpServers.acd-mcp` |
 
