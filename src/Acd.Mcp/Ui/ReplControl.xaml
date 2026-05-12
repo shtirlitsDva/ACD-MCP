@@ -5,7 +5,18 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             d:DesignHeight="500" d:DesignWidth="700">
+             d:DesignHeight="500" d:DesignWidth="700"
+             Background="{DynamicResource Brush.Bg.Window}"
+             Foreground="{DynamicResource Brush.Fg.Primary}">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Acd.Mcp;component/Ui/Themes/Theme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*" MinHeight="80"/>
@@ -16,67 +27,61 @@
 
         <!-- Editor: AvalonEdit with C# syntax highlighting.
              Name="Editor" exposes it to the code-behind, which two-way-syncs
-             the text into the VM's CurrentCode property. -->
-        <Border Grid.Row="0" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1">
+             the text into the VM's CurrentCode property and applies dark
+             theming to the syntax-colour table (AvalonEdit bypasses WPF
+             styling for token colours, so its theming is done in code). -->
+        <Border Grid.Row="0"
+                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                BorderThickness="0,0,0,1"
+                Background="{DynamicResource Brush.Bg.Window}">
             <avalon:TextEditor x:Name="Editor"
                                SyntaxHighlighting="C#"
-                               FontFamily="Consolas"
-                               FontSize="12"
                                ShowLineNumbers="True"
                                WordWrap="False"
                                HorizontalScrollBarVisibility="Auto"
-                               VerticalScrollBarVisibility="Auto">
+                               VerticalScrollBarVisibility="Auto"
+                               Background="{DynamicResource Brush.Bg.Window}"
+                               Foreground="{DynamicResource Brush.Fg.Primary}"
+                               LineNumbersForeground="{DynamicResource Brush.Fg.Secondary}">
                 <avalon:TextEditor.InputBindings>
                     <KeyBinding Key="Enter" Modifiers="Control" Command="{Binding RunCommand}"/>
                 </avalon:TextEditor.InputBindings>
             </avalon:TextEditor>
         </Border>
 
-        <!-- Toolbar: Run / Reset / Clear + live status string -->
-        <Border Grid.Row="1" BorderBrush="#FFCCCCCC" BorderThickness="0,0,0,1" Padding="6,4">
+        <!-- Toolbar -->
+        <Border Grid.Row="1" Style="{StaticResource Border.SectionStrip}">
             <DockPanel LastChildFill="True">
                 <Button Content="Run (Ctrl+Enter)"
                         Command="{Binding RunCommand}"
-                        Padding="10,4" Margin="0,0,6,0"/>
+                        Margin="0,0,6,0"/>
                 <Button Content="Reset session"
                         Command="{Binding ResetSessionCommand}"
-                        Padding="10,4" Margin="0,0,6,0"/>
+                        Margin="0,0,6,0"/>
                 <Button Content="Clear log"
                         Command="{Binding ClearLogCommand}"
-                        Padding="10,4" Margin="0,0,12,0"/>
+                        Margin="0,0,12,0"/>
                 <TextBlock Text="{Binding StatusLine}"
-                           VerticalAlignment="Center"
-                           Opacity="0.7"/>
+                           Style="{StaticResource Text.Secondary}"
+                           VerticalAlignment="Center"/>
             </DockPanel>
         </Border>
 
         <!-- Section header for the log -->
-        <Border Grid.Row="2" Background="#FFF0F0F0" Padding="6,3">
+        <Border Grid.Row="2" Style="{StaticResource Border.SectionStrip}">
             <TextBlock Text="Execution log (newest first — click a row to see details)"
-                       FontWeight="SemiBold"
-                       Opacity="0.8"/>
+                       Style="{StaticResource Text.SectionHeader}"/>
         </Border>
 
         <!-- Log list. Each row is an Expander; header is one fixed-pitch line,
-             detail body shows code + result. -->
-        <ListBox Grid.Row="3"
-                 ItemsSource="{Binding LogEntries}"
-                 HorizontalContentAlignment="Stretch"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 BorderThickness="0">
-            <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem">
-                    <Setter Property="Padding" Value="0"/>
-                    <Setter Property="Margin" Value="0"/>
-                </Style>
-            </ListBox.ItemContainerStyle>
+             detail body shows code + result. All styling lives in Theme.xaml. -->
+        <ListBox Grid.Row="3" ItemsSource="{Binding LogEntries}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <Expander>
                         <Expander.Header>
                             <TextBlock Text="{Binding Header}"
-                                       FontFamily="Consolas"
-                                       Foreground="{Binding IsSuccess, Converter={StaticResource SuccessBrushConverter}}"/>
+                                       Style="{StaticResource Text.LogRowHeader}"/>
                         </Expander.Header>
                         <Grid Margin="22,4,6,8">
                             <Grid.RowDefinitions>
@@ -86,28 +91,28 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Text="Code" FontWeight="SemiBold" Margin="0,2,0,2"/>
-                            <Border Grid.Row="1"
-                                    Background="#FFFAFAFA" BorderBrush="#FFE0E0E0" BorderThickness="1"
-                                    Padding="6">
+                            <TextBlock Grid.Row="0"
+                                       Text="Code"
+                                       Style="{StaticResource Text.SectionHeader}"
+                                       Margin="0,2,0,2"/>
+                            <Border Grid.Row="1" Style="{StaticResource Border.DetailBox}">
                                 <TextBox Text="{Binding Code, Mode=OneWay}"
+                                         Style="{StaticResource {x:Type TextBox}}"
                                          IsReadOnly="True"
-                                         BorderThickness="0"
-                                         Background="Transparent"
-                                         FontFamily="Consolas"
+                                         FontFamily="{StaticResource Font.Mono}"
                                          TextWrapping="Wrap"
                                          AcceptsReturn="True"/>
                             </Border>
 
-                            <TextBlock Grid.Row="2" Text="Result" FontWeight="SemiBold" Margin="0,8,0,2"/>
-                            <Border Grid.Row="3"
-                                    Background="#FFFAFAFA" BorderBrush="#FFE0E0E0" BorderThickness="1"
-                                    Padding="6">
+                            <TextBlock Grid.Row="2"
+                                       Text="Result"
+                                       Style="{StaticResource Text.SectionHeader}"
+                                       Margin="0,8,0,2"/>
+                            <Border Grid.Row="3" Style="{StaticResource Border.DetailBox}">
                                 <TextBox Text="{Binding Detail, Mode=OneWay}"
+                                         Style="{StaticResource {x:Type TextBox}}"
                                          IsReadOnly="True"
-                                         BorderThickness="0"
-                                         Background="Transparent"
-                                         FontFamily="Consolas"
+                                         FontFamily="{StaticResource Font.Mono}"
                                          TextWrapping="Wrap"
                                          AcceptsReturn="True"/>
                             </Border>
@@ -117,9 +122,4 @@
             </ListBox.ItemTemplate>
         </ListBox>
     </Grid>
-
-    <UserControl.Resources>
-        <local:SuccessBrushConverter x:Key="SuccessBrushConverter"
-                                     xmlns:local="clr-namespace:Acd.Mcp.Ui"/>
-    </UserControl.Resources>
 </UserControl>
