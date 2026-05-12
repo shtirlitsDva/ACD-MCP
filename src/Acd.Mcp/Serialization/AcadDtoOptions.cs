@@ -16,11 +16,15 @@ namespace Acd.Mcp.Serialization
         {
             var options = new JsonSerializerOptions
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                // Snake_case is the DTO convention spec'd for the agent-facing
+                // JSON: `color_index`, not `colorIndex`. The policy lets DTO
+                // authors write either Pascal names (transformed) or snake_case
+                // names (untouched) — both end up the same in the output.
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
                 WriteIndented = false,
                 // Anonymous objects produced by DTO projections include enums
-                // (Color, LinetypeObjectId etc.). Writing them as names is
+                // (LineWeight, ColorMethod, etc.). Writing them as names is
                 // friendlier to an agent than raw integers.
                 Converters = { new JsonStringEnumConverter() },
             };

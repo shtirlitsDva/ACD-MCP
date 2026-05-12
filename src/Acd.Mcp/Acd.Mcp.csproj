@@ -32,6 +32,13 @@
          loaded explicitly in ReplControl.xaml.cs so the dark colours don't
          leak into other AvalonEdit instances in the process. -->
     <EmbeddedResource Include="Ui\Themes\CSharp-Dark.xshd" />
+
+    <!-- Starter DTO set, embedded so DevReload's byte[]-loaded ALC can seed
+         %LOCALAPPDATA%\Acd.Mcp\dto-system\ without a sibling-folder path
+         lookup (Assembly.Location is empty in that loader). A future
+         installer can extract these from the bundle directly without going
+         through resource enumeration. -->
+    <EmbeddedResource Include="Resources\DtoSystem\*.csx" />
   </ItemGroup>
 
   <ItemGroup>
