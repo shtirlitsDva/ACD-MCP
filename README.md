@@ -82,7 +82,7 @@ Recommended inner loop. Requires [DevReload](https://github.com/shtirlitsDva/Dev
 
 ## MCP tools exposed
 
-* **`execute_csharp(code, timeout_ms?)`** — run C# inside AutoCAD.
+* **`autocad_execute_csharp(code, timeout_ms?)`** — run C# inside AutoCAD. Annotated as not-read-only, destructive, not-idempotent, open-world.
 
   Globals available in scope: `Doc` (active `Document`), `Db` (its `Database`), `Ed` (its `Editor`). The full `Autodesk.AutoCAD.*` namespaces are imported. Variables declared at top level persist into the next call.
 
@@ -94,7 +94,7 @@ See [`docs/design/architecture.md`](docs/design/architecture.md) for the full de
 
 * **The snippet blocks AutoCAD's main thread for its duration.** Same as any `[CommandMethod]`. A cooperative `timeout_ms` cancels at the next `CancellationToken` check; a snippet that spins without observing it cannot be interrupted without killing AutoCAD.
 * **No sandbox.** Arbitrary C# inside the AutoCAD process means full process privileges. Treat this as a trusted developer tool. The named pipe's default ACL restricts access to the current user session.
-* **Roslyn-emitted assemblies accumulate.** Each `execute_csharp` call emits a fresh script assembly into the default `AssemblyLoadContext` (which is not collectible). `ACDMCP_RESET` drops the script state; an AutoCAD restart frees the assembly memory.
+* **Roslyn-emitted assemblies accumulate.** Each `autocad_execute_csharp` call emits a fresh script assembly into the default `AssemblyLoadContext` (which is not collectible). `ACDMCP_RESET` drops the script state; an AutoCAD restart frees the assembly memory.
 * **Modal AutoCAD dialogs deadlock the pipe.** If AutoCAD is showing a modal (plot preview, etc.), the message pump is busy and main-thread marshaling waits until the modal closes. Use `timeout_ms` to surface this.
 
 ## License
