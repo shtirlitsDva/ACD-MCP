@@ -1,19 +1,16 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text.Json;
-using Acd.Mcp.Scripting;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace Acd.Mcp.Pipe
 {
-    // Named-pipe server that accepts JSON-RPC requests and dispatches them.
-    // Listener runs on a threadpool task; per-connection handlers run on their
-    // own tasks. The 'execute' method marshals onto AutoCAD's main thread via
-    // the SynchronizationContext captured at plugin Initialize().
+    // Transport. Listens on a named pipe, frames JSON-RPC requests, hands them to
+    // the executor, frames responses back. Knows nothing about threads, documents,
+    // or the script session — the executor owns that complexity.
     public sealed class PipeListener : IDisposable
     {
-        private readonly SynchronizationContext _mainSync;
-        private readonly ScriptSession _session;
+        private readonly AcadExecutor _executor;
         private CancellationTokenSource? _cts;
         private Task? _loop;
         private readonly object _lock = new();
@@ -21,10 +18,9 @@ namespace Acd.Mcp.Pipe
         public string PipeName { get; }
         public bool IsRunning { get; private set; }
 
-        public PipeListener(SynchronizationContext mainSync, ScriptSession session)
+        public PipeListener(AcadExecutor executor)
         {
-            _mainSync = mainSync;
-            _session = session;
+            _executor = executor;
             PipeName = $"acd-mcp-{Process.GetCurrentProcess().Id}";
         }
 
@@ -54,9 +50,8 @@ namespace Acd.Mcp.Pipe
             }
 
             try { ctsToDispose?.Cancel(); } catch { }
-            // Give the loop a moment to wind down; in-flight connection handlers
-            // will see CT cancellation and bail. Bounded wait so Terminate() never
-            // blocks AutoCAD for long.
+            // Bounded so Terminate() never blocks AutoCAD for long. In-flight
+            // connection handlers observe CT cancellation and bail.
             try { loopToWait?.Wait(TimeSpan.FromSeconds(2)); } catch { }
             try { ctsToDispose?.Dispose(); } catch { }
         }
@@ -86,8 +81,8 @@ namespace Acd.Mcp.Pipe
                 catch (OperationCanceledException) { break; }
                 catch
                 {
-                    // Swallow listener faults — the next loop iteration creates a
-                    // fresh server. Production telemetry/logging belongs in Slice 5.
+                    // Swallow listener faults — the next iteration creates a fresh
+                    // server. Production telemetry/logging belongs in Slice 5.
                 }
                 finally
                 {
@@ -105,19 +100,19 @@ namespace Acd.Mcp.Pipe
                     JsonRpcRequest? req;
                     try
                     {
-                        req = await FrameIO.ReadRequestAsync(server, ct).ConfigureAwait(false);
+                        req = await FrameIO.ReadFrameAsync<JsonRpcRequest>(server, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) { break; }
                     catch
                     {
-                        // Bad framing — the byte stream is no longer trustworthy.
-                        // Drop the connection; the client can reconnect.
+                        // Byte stream is no longer trustworthy. Drop the connection;
+                        // the client can reconnect.
                         break;
                     }
 
                     if (req is null) break;
                     var response = await DispatchAsync(req, ct).ConfigureAwait(false);
-                    await FrameIO.WriteResponseAsync(server, response, ct).ConfigureAwait(false);
+                    await FrameIO.WriteFrameAsync(server, response, ct).ConfigureAwait(false);
                 }
             }
             catch { /* per-connection swallow; listener continues */ }
@@ -139,7 +134,7 @@ namespace Acd.Mcp.Pipe
                         });
 
                     case "reset":
-                        _session.Reset();
+                        _executor.Reset();
                         return JsonRpcResponse.Ok(req.Id, new { ok = true });
 
                     case "execute":
@@ -157,7 +152,7 @@ namespace Acd.Mcp.Pipe
                         {
                             timeoutMs = to;
                         }
-                        var result = await ExecuteOnMainThreadAsync(codeEl.GetString()!, timeoutMs, ct)
+                        var result = await _executor.ExecuteAsync(codeEl.GetString()!, timeoutMs, ct)
                             .ConfigureAwait(false);
                         return JsonRpcResponse.Ok(req.Id, result);
 
@@ -170,46 +165,6 @@ namespace Acd.Mcp.Pipe
             {
                 return JsonRpcResponse.Err(req.Id, ErrorCodes.InternalError, ex.ToString());
             }
-        }
-
-        private async Task<ExecuteResult> ExecuteOnMainThreadAsync(string code, int? timeoutMs, CancellationToken outerCt)
-        {
-            var tcs = new TaskCompletionSource<ExecuteResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            using var perCallCts = new CancellationTokenSource();
-            if (timeoutMs is int ms && ms > 0) perCallCts.CancelAfter(ms);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(outerCt, perCallCts.Token);
-            var token = linked.Token;
-
-            _mainSync.Post(_ =>
-            {
-                try
-                {
-                    var doc = Application.DocumentManager.MdiActiveDocument;
-                    if (doc is null)
-                    {
-                        tcs.TrySetResult(ExecuteResult.Runtime("No active document.", 0));
-                        return;
-                    }
-
-                    // Doc lock covers any DB writes the snippet may perform. We
-                    // block the main thread for the duration of the script —
-                    // CSharpScript's internal awaits use ConfigureAwait(false),
-                    // so continuations land on the threadpool and don't deadlock
-                    // against this synchronous wait.
-                    using (doc.LockDocument())
-                    {
-                        var result = _session.ExecuteAsync(code, token).GetAwaiter().GetResult();
-                        tcs.TrySetResult(result);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    tcs.TrySetResult(ExecuteResult.Runtime(ex.ToString(), 0));
-                }
-            }, null);
-
-            return await tcs.Task.ConfigureAwait(false);
         }
     }
 }

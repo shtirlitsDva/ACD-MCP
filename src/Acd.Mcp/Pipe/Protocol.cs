@@ -6,6 +6,9 @@ namespace Acd.Mcp.Pipe
     // JSON-RPC 2.0 over a named pipe with length-prefixed frames:
     //   [4-byte big-endian length][UTF-8 JSON payload]
     // Length prefix avoids escaping arbitrary newlines in user code.
+    //
+    // This file is intentionally AutoCAD-free so it can be shared with the
+    // out-of-process bridge via a linked compile item.
 
     public sealed class JsonRpcRequest
     {
@@ -62,8 +65,8 @@ namespace Acd.Mcp.Pipe
             WriteIndented = false,
         };
 
-        // Returns null on clean disconnect (EOF before the next frame).
-        public static async Task<JsonRpcRequest?> ReadRequestAsync(Stream stream, CancellationToken ct)
+        // Returns null on clean disconnect before a new frame starts.
+        public static async Task<T?> ReadFrameAsync<T>(Stream stream, CancellationToken ct) where T : class
         {
             var lenBuf = new byte[4];
             if (!await ReadExactAsync(stream, lenBuf, 0, 4, ct).ConfigureAwait(false))
@@ -77,12 +80,12 @@ namespace Acd.Mcp.Pipe
             if (!await ReadExactAsync(stream, payload, 0, len, ct).ConfigureAwait(false))
                 throw new EndOfStreamException("Truncated frame payload.");
 
-            return JsonSerializer.Deserialize<JsonRpcRequest>(payload, JsonOptions);
+            return JsonSerializer.Deserialize<T>(payload, JsonOptions);
         }
 
-        public static async Task WriteResponseAsync(Stream stream, JsonRpcResponse response, CancellationToken ct)
+        public static async Task WriteFrameAsync<T>(Stream stream, T payload, CancellationToken ct)
         {
-            var data = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
+            var data = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions);
             var lenBuf = new byte[4]
             {
                 (byte)((data.Length >> 24) & 0xFF),

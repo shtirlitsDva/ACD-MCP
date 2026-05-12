@@ -1,5 +1,8 @@
-namespace Acd.Mcp.Scripting
+namespace Acd.Mcp
 {
+    // Result of executing a snippet. Lives at the project root because it's the
+    // wire currency — both transport (Pipe) and execution (Scripting) reference it,
+    // and the out-of-process bridge links this file directly.
     public sealed record ExecuteResult(
         bool Success,
         string? Stdout,

@@ -31,6 +31,7 @@ namespace Acd.Mcp
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
         private static ScriptSession? _session;
+        private static AcadExecutor? _executor;
         private static PipeListener? _listener;
         private static SynchronizationContext? _mainSync;
 
@@ -52,6 +53,7 @@ namespace Acd.Mcp
             try { _listener?.Stop(); } catch { }
             _listener?.Dispose();
             _listener = null;
+            _executor = null;
             _session = null;
             _mainSync = null;
             Log($"Terminate() {Version}");
@@ -77,6 +79,7 @@ namespace Acd.Mcp
             }
 
             _session ??= new ScriptSession();
+            _executor ??= new AcadExecutor(_mainSync, _session);
 
             if (_listener is { IsRunning: true })
             {
@@ -84,7 +87,7 @@ namespace Acd.Mcp
                 return;
             }
 
-            _listener ??= new PipeListener(_mainSync, _session);
+            _listener ??= new PipeListener(_executor);
             _listener.Start();
             ed.WriteMessage($"\n[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.\n");
         }
