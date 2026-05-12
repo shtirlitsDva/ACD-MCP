@@ -14,7 +14,7 @@ The user clicks `ACDMCP_START` (or it's autoloaded) to open the pipe. The user o
 
 <two-modes>
 1. **REPL** — `autocad_execute_csharp(code, timeout_ms?)`. Run snippets against the active drawing. See `<repl-conventions>`.
-2. **BATCH** — multi-file edits via the `autocad_batch_*` tools and `acd-mcp://batch-runs/last`. **Live execution is always the user's click; you can only propose and Test.** See sibling `/acd-mcp:batch` for the full workflow.
+2. **BATCH** — multi-file edits via the `autocad_batch_*` tools and `acd-mcp://batch-runs/last`. See sibling `/acd-mcp:batch` for the full workflow and rules.
 </two-modes>
 
 <repl-conventions>
@@ -36,8 +36,6 @@ tx.Commit();
 ```
 
 **Return small, well-shaped values.** The MCP serializes your snippet's return value via the DTO graph. See `<serialization-etiquette>`.
-
-**Timeouts.** Snippets block AutoCAD's main thread for their duration. Pass `timeout_ms` for anything that loops over many entities, queries Civil 3D networks, etc. Cancellation is cooperative — a tight `while (true)` with no `CancellationToken` check cannot be interrupted.
 </repl-conventions>
 
 <serialization-etiquette>
@@ -55,17 +53,16 @@ The serializer applies `JsonNamingPolicy.SnakeCaseLower` to property names. Eith
 </serialization-etiquette>
 
 <hard-rules>
-1. **Live batch execution is ALWAYS the user's click.** There is no `autocad_batch_run_live` tool. Don't ask for one, don't invent one. The user flips a slide-switch in the palette and clicks Run — that's the safety boundary.
+1. **GUESSING IS FORBIDDEN.** Before referencing any AutoCAD type's property in REPL code or in a DTO, verify it exists. Three acceptable verification paths, in this order of preference:
+   * **Probe the live type via REPL** — `typeof(T).GetProperties().Select(p => p.Name).ToList()`. Authoritative.
+   * **Read the official Autodesk .NET API docs** — fetch via Context7 (`mcp__plugin_context7_context7__query-docs` with the AutoCAD Managed API library) or web search the exact class name. Use when the type isn't reachable from the active drawing.
+   * **Inspect an instance** — `someObj.GetType().GetProperties()...` when you already have a representative value.
 
-2. **GUESSING IS FORBIDDEN.** Before referencing any AutoCAD type's property in REPL code or in a DTO, verify it exists. Probe with `typeof(T).GetProperties().Select(p => p.Name).ToList()`. A guessed property name silently fails to compile or returns wrong data.
+   A guessed property name silently fails to compile or returns wrong data. If after all three you still aren't sure, ask the user — don't invent.
 
-3. **Read the editor buffer before proposing a batch script.** `%LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx` is the live mirror of whatever the user has typed in the palette. Skipping this overwrites their in-flight edits.
+2. **One type per DTO file.** `circle.csx` registers `Circle` only. Multi-type files break per-type override. See `/acd-mcp:add-dto`.
 
-4. **One type per DTO file.** `circle.csx` registers `Circle` only. Multi-type files break per-type override. See `/acd-mcp:add-dto`.
-
-5. **Modal AutoCAD dialogs deadlock the pipe.** If the user is in plot-preview or a modal command, the snippet waits until they close it. Use `timeout_ms` so the surface error is clear.
-
-6. **No `Application.DocumentManager` in batch scripts.** Batch runs have no active document — only `xDb`, `xTx`, `ctx`. Touching `Application` is a compile error inside the batch host.
+Batch-specific rules live in `/acd-mcp:batch` — load that skill before doing anything in BATCH mode.
 </hard-rules>
 
 <file-locations>

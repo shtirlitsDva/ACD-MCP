@@ -22,10 +22,14 @@ Resolution order at serialisation time: user folder first, then system folder, t
 </where-dtos-live>
 
 <one-type-per-file>
-**Filename matches the type, lowercased.** Examples:
-- `Autodesk.AutoCAD.DatabaseServices.Circle` → `circle.csx`
-- `Autodesk.AutoCAD.DatabaseServices.BlockReference` → `blockreference.csx`
-- `Autodesk.AutoCAD.DatabaseServices.PolylineVertex3d` → `polylinevertex3d.csx`
+**Filename matches the type's short name, case preserved.** Examples:
+- `Autodesk.AutoCAD.DatabaseServices.Circle` → `Circle.csx`
+- `Autodesk.AutoCAD.DatabaseServices.BlockReference` → `BlockReference.csx`
+- `Autodesk.AutoCAD.Geometry.Point3d` → `Point3d.csx`
+
+**Case matters.** `Point3d` and `Point3D` are different types in different namespaces; the loader does case-sensitive type name resolution. On Windows NTFS, filenames are case-insensitive at the filesystem level — so when two short names collide only by case (e.g. `Point3d` vs `Point3D`), use the fully-qualified type name as the filename:
+- `Autodesk.AutoCAD.Geometry.Point3d.csx`
+- `System.Windows.Media.Media3D.Point3D.csx`
 
 **One `RegisterDto<T>` call per file.** Do not write an `entities.csx` that registers ten types. Per-file granularity is what lets a user override a single type via the user folder. Multiple registrations in one file break that contract.
 
@@ -39,7 +43,18 @@ The header is for diagnostics — when compilation fails, the loader logs "compi
 </one-type-per-file>
 
 <verify-do-not-guess>
-**GUESSING IS FORBIDDEN.** Before referencing any property of an AutoCAD type, confirm the property exists with the exact spelling. The user is emphatic on this — a DTO that calls a non-existent property fails at script-compile time, silently disables that type's DTO, and the serializer emits `$unsupported` again with no clear cause.
+**GUESSING IS FORBIDDEN.** Before referencing any property of an AutoCAD type, confirm the property exists with the exact spelling.
+
+**Compile errors are surfaced to you, not eaten.** When a DTO file fails to compile, the serializer emits an extended `$unsupported` marker with the diagnostic inline:
+
+```json
+{
+  "$unsupported": "Autodesk.AutoCAD.DatabaseServices.Circle",
+  "reason": "compile error in user/Circle.csx (12,8): CS1061: 'Circle' does not contain a definition for 'CentreOfMass'"
+}
+```
+
+When you see a `reason` field, you have the exact line, column, and error code — fix it and retry. You can also read `acd-mcp://dto-system/diagnostics` at any time for the live list of every currently-failing DTO file.
 
 Three acceptable verification paths:
 
@@ -121,7 +136,7 @@ The serializer rescans both folders on every cache miss (rate-limited to 500ms).
 - **No restart required.** Save the file; the next time the serializer encounters that type, it picks up your DTO.
 - **No registration step.** The file's mere presence in `dto-user/` (with a valid `Acd.RegisterDto<T>(...)` call) is the registration.
 
-If the rescan does not pick up your file, suspect a compile error — check the plugin's SafeBoundary log for `[DtoLoader] Compile error in user:<filename>`.
+If the rescan does not pick up your file, it failed to compile. The next time you ask for a value of that type the `$unsupported` marker carries a `reason` field with the diagnostic (see `<verify-do-not-guess>`). You can also read `acd-mcp://dto-system/diagnostics` directly for the live list of compile failures.
 </reload-behaviour>
 
 <override-pattern>
