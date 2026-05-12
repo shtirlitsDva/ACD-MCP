@@ -35,12 +35,7 @@ namespace Acd.Mcp.Ui
         {
             if (disposing)
             {
-                try { _control.Dispose(); }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Trace.WriteLine(
-                        $"ACD-MCP ReplPaletteSet.Dispose(ReplControl) swallowed: {ex}");
-                }
+                SafeBoundary.Run("ReplPaletteSet.Dispose(ReplControl)", () => _control.Dispose());
             }
             base.Dispose(disposing);
         }

@@ -49,11 +49,11 @@ namespace Acd.Mcp.Pipe
                 _cts = null;
             }
 
-            try { ctsToDispose?.Cancel(); } catch { }
             // Bounded so Terminate() never blocks AutoCAD for long. In-flight
             // connection handlers observe CT cancellation and bail.
-            try { loopToWait?.Wait(TimeSpan.FromSeconds(2)); } catch { }
-            try { ctsToDispose?.Dispose(); } catch { }
+            SafeBoundary.Run("PipeListener.Stop/cancel",  () => ctsToDispose?.Cancel());
+            SafeBoundary.Run("PipeListener.Stop/wait",    () => loopToWait?.Wait(TimeSpan.FromSeconds(2)));
+            SafeBoundary.Run("PipeListener.Stop/dispose", () => ctsToDispose?.Dispose());
         }
 
         public void Dispose() => Stop();
@@ -79,10 +79,11 @@ namespace Acd.Mcp.Pipe
                     _ = Task.Run(() => HandleConnectionAsync(conn, ct), ct);
                 }
                 catch (OperationCanceledException) { break; }
-                catch
+                catch (Exception ex)
                 {
-                    // Swallow listener faults — the next iteration creates a fresh
-                    // server. Production telemetry/logging belongs in Slice 5.
+                    // Log and continue. The next iteration creates a fresh server.
+                    // We don't want a single accept failure to terminate the listener.
+                    SafeBoundary.Report(ex, "PipeListener.AcceptLoopAsync");
                 }
                 finally
                 {
@@ -103,10 +104,12 @@ namespace Acd.Mcp.Pipe
                         req = await FrameIO.ReadFrameAsync<JsonRpcRequest>(server, ct).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) { break; }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Byte stream is no longer trustworthy. Drop the connection;
-                        // the client can reconnect.
+                        // Byte stream is no longer trustworthy. Log the framing
+                        // error so we can diagnose bad clients, then drop the
+                        // connection; the client can reconnect.
+                        SafeBoundary.Report(ex, "PipeListener.HandleConnectionAsync/read");
                         break;
                     }
 
@@ -115,7 +118,12 @@ namespace Acd.Mcp.Pipe
                     await FrameIO.WriteFrameAsync(server, response, ct).ConfigureAwait(false);
                 }
             }
-            catch { /* per-connection swallow; listener continues */ }
+            catch (Exception ex)
+            {
+                // Per-connection swallow so one bad client cannot kill the listener,
+                // but log so we know it happened.
+                SafeBoundary.Report(ex, "PipeListener.HandleConnectionAsync");
+            }
             finally { server.Dispose(); }
         }
 

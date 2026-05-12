@@ -85,6 +85,16 @@ Recommended inner loop. Requires [DevReload](https://github.com/shtirlitsDva/Dev
 
 The palette uses WPF. Under DevReload, add these to the plugin's shared-assemblies list so XAML types resolve consistently across the collectible ALC boundary: `PresentationFramework`, `PresentationCore`, `WindowsBase`, `System.Xaml`. (AvalonEdit and CommunityToolkit.Mvvm are loaded only by the plugin and stay in its ALC — no sharing needed.)
 
+### Diagnostic log
+
+Every exception caught at a plugin boundary (commands, pipe handlers, the palette dispatcher, async-task safety nets) is written to:
+
+```
+%LOCALAPPDATA%\Acd.Mcp\log.txt
+```
+
+Same text is also echoed to AutoCAD's command line and to `System.Diagnostics.Trace` (visible in DebugView). Each entry has timestamp, context tag, and `ex.ToString()` with stack trace. If something inside the plugin misbehaves, this file is the first place to look.
+
 ## MCP tools exposed
 
 * **`autocad_execute_csharp(code, timeout_ms?)`** — run C# inside AutoCAD. Annotated as not-read-only, destructive, not-idempotent, open-world.

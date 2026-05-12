@@ -42,7 +42,18 @@ namespace Acd.Mcp
                 _entries.AddFirst(entry);
                 while (_entries.Count > Capacity) _entries.RemoveLast();
             }
-            EntryAdded?.Invoke(this, entry);
+
+            // Per-subscriber isolation: a buggy handler must not poison Add for
+            // every other observer. Each delegate is invoked in its own try/catch
+            // so the next one still runs and the caller of Add (the executor)
+            // never sees a subscriber's exception.
+            var handlers = EntryAdded;
+            if (handlers is null) return;
+            foreach (Delegate d in handlers.GetInvocationList())
+            {
+                try { ((EventHandler<LogEntry>)d).Invoke(this, entry); }
+                catch (Exception ex) { SafeBoundary.Report(ex, "ExecutionLog.EntryAdded subscriber"); }
+            }
         }
 
         public IReadOnlyList<LogEntry> Snapshot()

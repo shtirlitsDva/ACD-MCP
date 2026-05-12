@@ -35,7 +35,14 @@ namespace Acd.Mcp.Pipe
             CancellationToken outerCt)
         {
             var result = await ExecuteCoreAsync(code, timeoutMs, outerCt).ConfigureAwait(false);
-            _log.Add(new LogEntry(DateTimeOffset.Now, source, code, result));
+
+            // ExecutionLog.Add isolates its own subscribers, but in case the act
+            // of constructing the LogEntry or acquiring the log's lock itself
+            // throws we still want the caller to see the result instead of an
+            // exception bubbling out.
+            SafeBoundary.Run("AcadExecutor.ExecuteAsync/log.Add", () =>
+                _log.Add(new LogEntry(DateTimeOffset.Now, source, code, result)));
+
             return result;
         }
 

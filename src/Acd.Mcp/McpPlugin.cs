@@ -4,6 +4,7 @@ using Acd.Mcp.Scripting;
 using Acd.Mcp.Ui;
 using Autodesk.AutoCAD.Runtime;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
+using Exception = System.Exception;
 using SynchronizationContext = System.Threading.SynchronizationContext;
 
 [assembly: ExtensionApplication(typeof(Acd.Mcp.McpPlugin))]
@@ -27,7 +28,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v4-palette";
+        private const string Version = "v5-hardened";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -40,86 +41,87 @@ namespace Acd.Mcp
 
         public void Initialize()
         {
-            // Initialize() runs on AutoCAD's main thread, which has a
-            // WindowsFormsSynchronizationContext installed. Capture it now so the
-            // pipe listener (on a threadpool thread) can later Post() snippet
-            // execution back onto this thread.
-            _mainSync = SynchronizationContext.Current
-                ?? throw new InvalidOperationException(
-                    "No SynchronizationContext on main thread — cannot marshal pipe requests back.");
+            // Initialize MUST NOT throw — DevReload (and AutoCAD's autoload path)
+            // handle plugin-init failure poorly. We capture everything and report.
+            SafeBoundary.EnsureInitialized();
+            SafeBoundary.Run("McpPlugin.Initialize", () =>
+            {
+                // Initialize() runs on AutoCAD's main thread, which has a
+                // WindowsFormsSynchronizationContext installed. Capture it now so the
+                // pipe listener (on a threadpool thread) can later Post() snippet
+                // execution back onto this thread. If for some reason it's null,
+                // we log and leave _mainSync null — EnsureCore() will then report
+                // "not initialized" the first time someone tries to use it.
+                _mainSync = SynchronizationContext.Current;
+                if (_mainSync is null)
+                    SafeBoundary.Info("Initialize", "WARNING: SynchronizationContext.Current is null.");
 
-            Log($"Initialize() {Version}");
+                SafeBoundary.Info("Initialize", $"{Version} (PID {Process.GetCurrentProcess().Id}, log: {SafeBoundary.LogFile})");
+                EditorMessage($"[ACD-MCP] Initialize() {Version} @ {DateTime.Now:HH:mm:ss}");
+            });
         }
 
         public void Terminate()
         {
-            // Order matters: dispose palette before dropping executor/log/session it
-            // references. Each step swallows so one failure cannot skip the next —
-            // the plugin assembly must come down cleanly for ALC unload to succeed.
-            try { _palette?.Close(); } catch { }
-            try { _palette?.Dispose(); } catch { }
+            // Terminate MUST NOT throw — DevReload's unload path needs to complete
+            // for the ALC to actually unload. Each tear-down step is isolated so
+            // one failure cannot skip the next.
+            SafeBoundary.Run("McpPlugin.Terminate/palette.Close",  () => _palette?.Close());
+            SafeBoundary.Run("McpPlugin.Terminate/palette.Dispose", () => _palette?.Dispose());
             _palette = null;
 
-            try { _listener?.Stop(); } catch { }
-            try { _listener?.Dispose(); } catch { }
+            SafeBoundary.Run("McpPlugin.Terminate/listener.Stop",    () => _listener?.Stop());
+            SafeBoundary.Run("McpPlugin.Terminate/listener.Dispose", () => _listener?.Dispose());
             _listener = null;
 
             _executor = null;
             _log = null;
             _session = null;
             _mainSync = null;
-            Log($"Terminate() {Version}");
+            SafeBoundary.Info("Terminate", $"{Version}");
+            SafeBoundary.Run("McpPlugin.Terminate/echo", () => EditorMessage($"[ACD-MCP] Terminate() {Version}"));
         }
 
         [CommandMethod("ACDMCP_PING")]
-        public static void Ping()
+        public static void Ping() => SafeBoundary.Run("ACDMCP_PING", () =>
         {
-            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-            ed?.WriteMessage($"\nACD-MCP pong {Version} @ {DateTime.Now:HH:mm:ss}\n");
-        }
+            EditorMessage($"ACD-MCP pong {Version} @ {DateTime.Now:HH:mm:ss}");
+        });
 
         [CommandMethod("ACDMCP_START")]
-        public static void Start()
+        public static void Start() => SafeBoundary.Run("ACDMCP_START", () =>
         {
-            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-            if (ed is null) return;
-
-            try
+            if (!TryEnsureCore(out var reason))
             {
-                EnsureCore();
-            }
-            catch (InvalidOperationException ex)
-            {
-                ed.WriteMessage($"\n[ACD-MCP] {ex.Message}\n");
+                EditorMessage($"[ACD-MCP] {reason}");
                 return;
             }
 
             if (_listener is { IsRunning: true })
             {
-                ed.WriteMessage($"\n[ACD-MCP] Already running on pipe '{_listener.PipeName}'.\n");
+                EditorMessage($"[ACD-MCP] Already running on pipe '{_listener.PipeName}'.");
                 return;
             }
 
             _listener ??= new PipeListener(_executor!);
             _listener.Start();
-            ed.WriteMessage($"\n[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.\n");
-        }
+            EditorMessage($"[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.");
+        });
 
         [CommandMethod("ACDMCP_STOP")]
-        public static void Stop()
+        public static void Stop() => SafeBoundary.Run("ACDMCP_STOP", () =>
         {
-            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
             if (_listener is null || !_listener.IsRunning)
             {
-                ed?.WriteMessage("\n[ACD-MCP] Listener is not running.\n");
+                EditorMessage("[ACD-MCP] Listener is not running.");
                 return;
             }
             _listener.Stop();
-            ed?.WriteMessage("\n[ACD-MCP] Listener stopped.\n");
-        }
+            EditorMessage("[ACD-MCP] Listener stopped.");
+        });
 
         [CommandMethod("ACDMCP_STATUS")]
-        public static void Status()
+        public static void Status() => SafeBoundary.Run("ACDMCP_STATUS", () =>
         {
             var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
             if (ed is null) return;
@@ -128,56 +130,64 @@ namespace Acd.Mcp
             ed.WriteMessage($"\n  Listener:   {(_listener is { IsRunning: true } ? $"running on '{_listener.PipeName}'" : "stopped")}");
             ed.WriteMessage($"\n  Session:    {(_session is null ? "uninitialized" : "ready")}");
             ed.WriteMessage($"\n  Palette:    {(_palette is null ? "not opened" : (_palette.Visible ? "visible" : "hidden"))}");
+            ed.WriteMessage($"\n  Log file:   {SafeBoundary.LogFile ?? "<unset>"}");
             ed.WriteMessage("\n");
-        }
+        });
 
         [CommandMethod("ACDMCP_RESET")]
-        public static void ResetSession()
+        public static void ResetSession() => SafeBoundary.Run("ACDMCP_RESET", () =>
         {
             _executor?.Reset();
-            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-            ed?.WriteMessage("\n[ACD-MCP] Script session reset.\n");
-        }
+            EditorMessage("[ACD-MCP] Script session reset.");
+        });
 
         [CommandMethod("ACDMCP_PALETTE")]
-        public static void ShowPalette()
+        public static void ShowPalette() => SafeBoundary.Run("ACDMCP_PALETTE", () =>
         {
-            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-            if (ed is null) return;
-
-            try
+            if (!TryEnsureCore(out var reason))
             {
-                EnsureCore();
-            }
-            catch (InvalidOperationException ex)
-            {
-                ed.WriteMessage($"\n[ACD-MCP] {ex.Message}\n");
+                EditorMessage($"[ACD-MCP] {reason}");
                 return;
             }
 
             _palette ??= new ReplPaletteSet(_executor!, _log!);
             _palette.Visible = true;
-        }
+        });
 
-        // Lazy-init the in-process core (log, session, executor). Called by any
-        // command that needs them; the listener and the palette both go through
-        // here so opening the palette without starting the listener Just Works,
-        // and vice versa.
-        private static void EnsureCore()
+        // Lazy-init the in-process core. Returns false with a human-readable
+        // reason instead of throwing, so commands can surface clean messages.
+        private static bool TryEnsureCore(out string reason)
         {
             if (_mainSync is null)
-                throw new InvalidOperationException(
-                    "Plugin not initialized: SynchronizationContext was not captured.");
+            {
+                reason = "Plugin not initialized: SynchronizationContext was not captured at Initialize().";
+                return false;
+            }
 
-            _log ??= new ExecutionLog();
-            _session ??= new ScriptSession();
-            _executor ??= new AcadExecutor(_mainSync, _session, _log);
+            try
+            {
+                _log ??= new ExecutionLog();
+                _session ??= new ScriptSession();
+                _executor ??= new AcadExecutor(_mainSync, _session, _log);
+                reason = "";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                SafeBoundary.Report(ex, "TryEnsureCore");
+                reason = $"Core initialization failed: {ex.Message}. See log: {SafeBoundary.LogFile}";
+                return false;
+            }
         }
 
-        private static void Log(string msg)
+        private static void EditorMessage(string msg)
         {
-            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
-            ed?.WriteMessage($"\n[ACD-MCP] {msg} @ {DateTime.Now:HH:mm:ss}\n");
+            try
+            {
+                var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
+                ed?.WriteMessage("\n" + msg + "\n");
+            }
+            catch { /* writing to a closing doc shouldn't propagate */ }
         }
     }
 }
