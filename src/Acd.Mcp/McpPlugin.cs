@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Text.Json;
+using Acd.Mcp.Data;
 using Acd.Mcp.Pipe;
 using Acd.Mcp.Scripting;
+using Acd.Mcp.Serialization;
 using Acd.Mcp.Ui;
 using Autodesk.AutoCAD.Runtime;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
@@ -28,7 +31,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v8-globals-fix";
+        private const string Version = "v9-dto";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -38,6 +41,13 @@ namespace Acd.Mcp
         private static PipeListener? _listener;
         private static ReplPaletteSet? _palette;
         private static SynchronizationContext? _mainSync;
+
+        // DTO graph. Built once in TryEnsureCore; the same registry feeds both
+        // the JsonSerializerOptions (passed to ScriptSession) and the loader
+        // (called for ReloadAll / Refresh).
+        private static DtoRegistry? _dtoRegistry;
+        private static DtoLoader? _dtoLoader;
+        private static JsonSerializerOptions? _dtoJsonOptions;
 
         public void Initialize()
         {
@@ -78,6 +88,9 @@ namespace Acd.Mcp
             _log = null;
             _session = null;
             _mainSync = null;
+            _dtoLoader = null;
+            _dtoRegistry = null;
+            _dtoJsonOptions = null;
             SafeBoundary.Info("Terminate", $"{Version}");
             SafeBoundary.Run("McpPlugin.Terminate/echo", () => EditorMessage($"[ACD-MCP] Terminate() {Version}"));
         }
@@ -166,8 +179,9 @@ namespace Acd.Mcp
 
             try
             {
+                EnsureDtoGraph();
                 _log ??= new ExecutionLog();
-                _session ??= new ScriptSession();
+                _session ??= new ScriptSession(_dtoJsonOptions);
                 _executor ??= new AcadExecutor(_mainSync, _session, _log);
                 reason = "";
                 return true;
@@ -178,6 +192,31 @@ namespace Acd.Mcp
                 reason = $"Core initialization failed: {ex.Message}. See log: {SafeBoundary.LogFile}";
                 return false;
             }
+        }
+
+        // Build the DTO machinery once per process lifetime. Idempotent; safe to
+        // call from every TryEnsureCore. Seeds %LOCALAPPDATA% from the embedded
+        // resource set, loads both folders into the registry, hands the
+        // resulting JsonSerializerOptions to ScriptSession.
+        private static void EnsureDtoGraph()
+        {
+            if (_dtoJsonOptions is not null) return;
+
+            DtoPaths.EnsureFolders();
+            DtoSystemSeeder.Seed();
+
+            _dtoRegistry = new DtoRegistry();
+            var providers = EntityDataProviders.CreateDefault();
+            var providerApi = new DtoDataProviderApi(providers);
+            _dtoLoader = new DtoLoader(_dtoRegistry, providerApi);
+
+            var reload = new DtoReloadTrigger(_dtoLoader);
+            _dtoJsonOptions = AcadDtoOptions.Build(_dtoRegistry, reload);
+
+            _dtoLoader.ReloadAll();
+
+            SafeBoundary.Info("EnsureDtoGraph",
+                $"Registered {_dtoRegistry.RegisteredTypes.Count} DTO types.");
         }
 
         private static void EditorMessage(string msg)

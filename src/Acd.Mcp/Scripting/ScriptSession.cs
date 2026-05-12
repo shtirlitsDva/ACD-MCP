@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -19,6 +20,7 @@ namespace Acd.Mcp.Scripting
     public sealed class ScriptSession
     {
         private readonly AcadGlobals _globals = new();
+        private readonly JsonSerializerOptions? _jsonOptions;
         private ScriptState? _state;
         private ScriptOptions _options = BuildOptions();
 
@@ -28,6 +30,14 @@ namespace Acd.Mcp.Scripting
         // not mutate the returned ScriptState.
         public ScriptState? CurrentState => _state;
         public AcadGlobals Globals => _globals;
+
+        // jsonOptions is the DTO-aware serializer the caller (plugin bootstrap)
+        // constructs. When null we fall back to ToString() only — keeps the
+        // session usable in tests that don't care about the JSON path.
+        public ScriptSession(JsonSerializerOptions? jsonOptions = null)
+        {
+            _jsonOptions = jsonOptions;
+        }
 
         public async Task<ExecuteResult> ExecuteAsync(string code, CancellationToken ct = default)
         {
@@ -52,7 +62,10 @@ namespace Acd.Mcp.Scripting
                         .ContinueWithAsync(submission, _options, ct)
                         .ConfigureAwait(false);
 
-                return ExecuteResult.Ok(_state.ReturnValue?.ToString(), sw.ElapsedMilliseconds)
+                var value = _state.ReturnValue;
+                var repr = value?.ToString();
+                var json = SerializeReturnValue(value);
+                return ExecuteResult.Ok(repr, json, sw.ElapsedMilliseconds)
                     with { Stdout = capture.Stdout, Stderr = capture.Stderr };
             }
             catch (CompilationErrorException cex)
@@ -81,6 +94,25 @@ namespace Acd.Mcp.Scripting
         {
             _state = null;
             _options = BuildOptions();
+        }
+
+        // Best-effort: a serializer error must never break the REPL response.
+        // The most common failure mode is touching a closed AutoCAD entity
+        // (script returned a reference whose owning Transaction is gone); we
+        // capture and report instead of throwing.
+        private string? SerializeReturnValue(object? value)
+        {
+            if (value is null) return null;
+            if (_jsonOptions is null) return null;
+
+            try
+            {
+                return JsonSerializer.Serialize(value, value.GetType(), _jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new { serialization_error = ex.Message });
+            }
         }
 
         private static ScriptOptions BuildOptions()
