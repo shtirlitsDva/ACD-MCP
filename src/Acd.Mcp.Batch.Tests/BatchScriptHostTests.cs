@@ -25,7 +25,7 @@ namespace Acd.Mcp.Batch.Tests
             var body = "this is not valid C#";
             var result = host.Compile(body);
             Assert.True(result.IsFailure);
-            var ex = ((Outcome<CompiledScript>.Failure)result).Error;
+            var ex = ((Outcome<CompiledScript>.Failure)result).Cause;
             var compileEx = Assert.IsType<BatchCompilationException>(ex);
             Assert.NotEmpty(compileEx.Diagnostics);
         }
@@ -61,7 +61,7 @@ namespace Acd.Mcp.Batch.Tests
             var body = "var x = 1;\nthisIsBroken();";
             var result = host.Compile(body);
             Assert.True(result.IsFailure);
-            var ex = (BatchCompilationException)((Outcome<CompiledScript>.Failure)result).Error;
+            var ex = (BatchCompilationException)((Outcome<CompiledScript>.Failure)result).Cause!;
             // The error must come from line 2 (the broken call).
             var lineSpan = ex.Diagnostics.First().Location.GetMappedLineSpan();
             Assert.True(lineSpan.IsValid);

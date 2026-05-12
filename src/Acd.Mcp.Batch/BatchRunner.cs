@@ -80,7 +80,7 @@ namespace Acd.Mcp.Batch
                     Files: files,
                     Results: Array.Empty<BatchFileResult>(),
                     Cancelled: false,
-                    AbortedReason: $"Compile failed: {fail.Error.Message}");
+                    AbortedReason: $"Compile failed: {fail.Message}");
             }
             var script = ((Outcome<CompiledScript>.Pass)compile).Value;
 

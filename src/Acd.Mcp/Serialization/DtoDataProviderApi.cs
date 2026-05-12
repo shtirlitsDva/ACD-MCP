@@ -1,4 +1,5 @@
 using Autodesk.AutoCAD.DatabaseServices;
+using Acd.Mcp.Batch;
 using Acd.Mcp.Data;
 
 namespace Acd.Mcp.Serialization
@@ -34,7 +35,7 @@ namespace Acd.Mcp.Serialization
         public string? TryRead(Entity entity, string key)
         {
             var tx = ResolveTx(entity);
-            return _provider.TryRead(entity, tx, key) is Outcome<string>.Success s ? s.Value : null;
+            return _provider.TryRead(entity, tx, key) is Outcome<string>.Pass p ? p.Value : null;
         }
 
         private static Transaction ResolveTx(Entity entity)

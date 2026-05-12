@@ -1,3 +1,4 @@
+using Acd.Mcp.Batch;
 using Autodesk.AutoCAD.DatabaseServices;
 
 namespace Acd.Mcp.Data
@@ -23,10 +24,10 @@ namespace Acd.Mcp.Data
         public Outcome<string> TryRead(Entity entity, Transaction tx, string key)
         {
             string? lastError = null;
-            foreach (var p in _providers)
+            foreach (var provider in _providers)
             {
-                var r = p.TryRead(entity, tx, key);
-                if (r is Outcome<string>.Success s) return s;
+                var r = provider.TryRead(entity, tx, key);
+                if (r is Outcome<string>.Pass pass) return pass;
                 if (r is Outcome<string>.Failure f) lastError = f.Message;
             }
             return Outcome<string>.Fail(lastError ?? $"Key '{key}' not found in any provider.");
@@ -35,9 +36,9 @@ namespace Acd.Mcp.Data
         public IReadOnlyDictionary<string, string> ReadAll(Entity entity, Transaction tx)
         {
             var merged = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
-            foreach (var p in _providers)
+            foreach (var provider in _providers)
             {
-                foreach (var (k, v) in p.ReadAll(entity, tx))
+                foreach (var (k, v) in provider.ReadAll(entity, tx))
                 {
                     if (!merged.ContainsKey(k)) merged[k] = v;
                 }

@@ -2,57 +2,74 @@ using System;
 
 namespace Acd.Mcp.Batch
 {
-    // Hand-rolled discriminated union used in three places:
-    //   - the per-file body outcome (Pass | Skip(reason) | Failure(error))
-    //   - any auxiliary computation that wants to return success-or-failure
-    //     without an exception
-    //   - the StepOutcome hierarchy below mirrors this same shape but carries
-    //     domain-specific payloads, so it lives in its own file.
+    // The single closed discriminated union used across the codebase for
+    // "this either yielded a value, was skipped with a reason, or failed".
     //
-    // Why hand-rolled (no OneOf / LanguageExt):
-    //   - The user explicitly forbade third-party DU libraries for this
-    //     codebase. We want exhaustive Match on a sealed hierarchy with no
-    //     surprises.
-    //   - Sealed records give us value-equality, a clean ToString, and
-    //     pattern-matching ergonomics.
-    //   - The Match overloads encode exhaustiveness at the call site: if a
-    //     new case were ever added, every caller would fail to compile.
+    // Three cases:
+    //   Pass(value)              — operation produced T.
+    //   Skip(reason)             — operation deliberately did not run, with a
+    //                              reason that surfaces to the user. Used by
+    //                              step Requires that short-circuit.
+    //   Failure(message, ?cause) — operation tried and failed. `message` is
+    //                              for display; `cause` is the underlying
+    //                              exception when one exists (compile errors,
+    //                              body throws). Callers that only care
+    //                              "didn't yield a value" can collapse Skip +
+    //                              Failure.
+    //
+    // Hand-rolled (no OneOf / LanguageExt). The base type's private protected
+    // constructor seals the case list so no external assembly can extend it,
+    // which lets the switch expressions stay exhaustive.
+    //
+    // Lives in Acd.Mcp.Batch because that's the pure-runtime project; both
+    // Acd.Mcp (AutoCAD-bound) and Acd.Mcp.Bridge reference this assembly, so
+    // every consumer in the system sees the same type.
     public abstract record Outcome<T>
     {
-        // Locked constructor — only the nested derived records can extend it.
-        // This makes the hierarchy effectively closed for pattern matching.
         private protected Outcome() { }
 
         public sealed record Pass(T Value) : Outcome<T>;
         public sealed record Skip(string Reason) : Outcome<T>;
-        public sealed record Failure(Exception Error) : Outcome<T>;
+        public sealed record Failure(string Message, Exception? Cause = null) : Outcome<T>;
 
-        public TOut Match<TOut>(
-            Func<T, TOut> onPass,
-            Func<string, TOut> onSkip,
-            Func<Exception, TOut> onFailure) => this switch
+        public static Outcome<T> Ok(T value) => new Pass(value);
+        public static Outcome<T> Fail(string message, Exception? cause = null) => new Failure(message, cause);
+        public static Outcome<T> Fail(Exception cause) => new Failure(cause.Message, cause);
+        public static Outcome<T> Skipped(string reason) => new Skip(reason);
+
+        public TResult Match<TResult>(
+            Func<T, TResult> onPass,
+            Func<string, TResult> onSkip,
+            Func<string, Exception?, TResult> onFailure) => this switch
             {
                 Pass p => onPass(p.Value),
                 Skip s => onSkip(s.Reason),
-                Failure f => onFailure(f.Error),
+                Failure f => onFailure(f.Message, f.Cause),
                 _ => throw new InvalidOperationException(
-                    $"Unhandled Outcome<{typeof(T).Name}> case: {GetType().Name}"),
+                    $"Outcome<{typeof(T).Name}> union closed; this line is unreachable."),
             };
 
-        public void Match(
+        public void Switch(
             Action<T> onPass,
             Action<string> onSkip,
-            Action<Exception> onFailure)
+            Action<string, Exception?> onFailure)
         {
             switch (this)
             {
-                case Pass p: onPass(p.Value); break;
-                case Skip s: onSkip(s.Reason); break;
-                case Failure f: onFailure(f.Error); break;
+                case Pass p: onPass(p.Value); return;
+                case Skip s: onSkip(s.Reason); return;
+                case Failure f: onFailure(f.Message, f.Cause); return;
                 default:
                     throw new InvalidOperationException(
-                        $"Unhandled Outcome<{typeof(T).Name}> case: {GetType().Name}");
+                        $"Outcome<{typeof(T).Name}> union closed; this line is unreachable.");
             }
+        }
+
+        public bool TryGet(out T value)
+        {
+            if (this is Pass p) { value = p.Value; return true; }
+            value = default!;
+            return false;
         }
 
         public bool IsPass => this is Pass;
@@ -60,13 +77,14 @@ namespace Acd.Mcp.Batch
         public bool IsFailure => this is Failure;
     }
 
-    // Convenience constructors on a non-generic type so call sites can write
-    // Outcome.Pass(value) without naming T (the compiler infers it). Keeps
-    // the consuming code symmetrical with `return Outcome.Pass(x);` style.
+    // Non-generic helper for type-inferred construction at the call site:
+    //   return Outcome.Pass(value);
+    //   return Outcome.Failure<int>(ex);
     public static class Outcome
     {
         public static Outcome<T>.Pass Pass<T>(T value) => new(value);
         public static Outcome<T>.Skip Skip<T>(string reason) => new(reason);
-        public static Outcome<T>.Failure Failure<T>(Exception error) => new(error);
+        public static Outcome<T>.Failure Failure<T>(string message, Exception? cause = null) => new(message, cause);
+        public static Outcome<T>.Failure Failure<T>(Exception cause) => new(cause.Message, cause);
     }
 }

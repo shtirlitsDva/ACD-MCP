@@ -1,3 +1,4 @@
+using Acd.Mcp.Batch;
 using Autodesk.AutoCAD.DatabaseServices;
 
 namespace Acd.Mcp.Data
