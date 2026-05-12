@@ -23,6 +23,7 @@ namespace Acd.Mcp.Scripting
         public async Task<ExecuteResult> ExecuteAsync(string code, CancellationToken ct = default)
         {
             var sw = Stopwatch.StartNew();
+            using var capture = new ConsoleCapture();
             try
             {
                 _state = _state is null
@@ -33,20 +34,28 @@ namespace Acd.Mcp.Scripting
                         .ContinueWithAsync(code, _options, ct)
                         .ConfigureAwait(false);
 
-                return ExecuteResult.Ok(_state.ReturnValue?.ToString(), sw.ElapsedMilliseconds);
+                return ExecuteResult.Ok(_state.ReturnValue?.ToString(), sw.ElapsedMilliseconds)
+                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
             }
             catch (CompilationErrorException cex)
             {
                 var diags = cex.Diagnostics.Select(MapDiagnostic).ToArray();
-                return ExecuteResult.CompileError(diags, sw.ElapsedMilliseconds);
+                return ExecuteResult.CompileError(diags, sw.ElapsedMilliseconds)
+                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
             }
             catch (OperationCanceledException)
             {
-                return ExecuteResult.Runtime("Cancelled", sw.ElapsedMilliseconds);
+                return ExecuteResult.Runtime("Cancelled", sw.ElapsedMilliseconds)
+                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
             }
             catch (Exception ex)
             {
-                return ExecuteResult.Runtime(ex.ToString(), sw.ElapsedMilliseconds);
+                // Runtime exceptions go into the stderr stream alongside any prior
+                // Console.Error.Write output the snippet produced before throwing.
+                var stderr = capture.Stderr;
+                stderr = string.IsNullOrEmpty(stderr) ? ex.ToString() : stderr + "\n" + ex;
+                return ExecuteResult.Runtime("Unhandled exception", sw.ElapsedMilliseconds)
+                    with { Stdout = capture.Stdout, Stderr = stderr };
             }
         }
 
