@@ -14,6 +14,12 @@
          WindowsBase / System.Xaml must be added to DevReload's shared-assemblies
          list so XAML resolves to the same types AutoCAD already uses. -->
     <UseWPF>true</UseWPF>
+
+    <!-- Required by ScriptSession.TryGetReferenceForLoadedAssembly which uses
+         System.Reflection.Metadata.AssemblyExtensions.TryGetRawMetadata (byte*).
+         Affects only our plugin code — the C# script the user types is
+         independently restricted via ScriptOptions.WithAllowUnsafe(false). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

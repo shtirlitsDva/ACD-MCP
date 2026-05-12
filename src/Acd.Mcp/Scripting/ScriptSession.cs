@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
+using System.Reflection.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -85,13 +88,27 @@ namespace Acd.Mcp.Scripting
 
         private static ScriptOptions BuildOptions()
         {
-            // Hand the script the same surface the host plugin has. Filtering out
-            // dynamic assemblies (no Location) and any with an empty Location avoids
-            // MetadataReference.CreateFromFile throwing.
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .ToArray();
+            // Hand the script the same surface the host plugin has. Two-path
+            // resolution per assembly:
+            //   - non-empty Location  → MetadataReference.CreateFromFile(path)
+            //   - byte[]-loaded ALC   → TryGetRawMetadata → AssemblyMetadata.Create
+            //
+            // The second path matters specifically for the Acd.Mcp plugin itself
+            // when running under DevReload's IsolatedPluginContext (LoadFromStream
+            // gives Location=""). Without it the script can't see AcadGlobals.Doc
+            // / .Db / .Ed even though they're passed as globals at runtime, because
+            // Roslyn needs metadata for the globalsType's assembly to bind names.
+            var refs = new List<MetadataReference>();
+            var seen = new HashSet<Assembly>();
+
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                AddAssemblyReference(asm, refs, seen);
+
+            // Belt-and-braces: explicitly ensure the assembly containing AcadGlobals
+            // is referenced. AppDomain enumeration is usually sufficient, but this
+            // guarantees the globalsType is resolvable even if some future loader
+            // hides it from the AppDomain scan.
+            AddAssemblyReference(typeof(AcadGlobals).Assembly, refs, seen);
 
             return ScriptOptions.Default
                 .WithReferences(refs)
@@ -108,6 +125,47 @@ namespace Acd.Mcp.Scripting
                     "Autodesk.AutoCAD.Runtime")
                 .WithAllowUnsafe(false)
                 .WithOptimizationLevel(OptimizationLevel.Debug);
+        }
+
+        private static void AddAssemblyReference(
+            Assembly asm, List<MetadataReference> refs, HashSet<Assembly> seen)
+        {
+            if (asm.IsDynamic) return;
+            if (!seen.Add(asm)) return;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(asm.Location))
+                {
+                    refs.Add(MetadataReference.CreateFromFile(asm.Location));
+                    return;
+                }
+
+                if (TryGetInMemoryReference(asm, out var inMemory))
+                    refs.Add(inMemory);
+            }
+            catch
+            {
+                // A corrupt / unreadable assembly should not poison the whole
+                // script session. Silently skip; missing references will surface
+                // as CS errors against any code that actually depends on this
+                // assembly, which is the correct outcome.
+            }
+        }
+
+        // Build a MetadataReference for an assembly that has no on-disk Location
+        // (typically a byte[]-loaded plugin in a custom AssemblyLoadContext). Uses
+        // System.Reflection.Metadata's TryGetRawMetadata, which exposes the PE
+        // metadata blob the runtime already holds in memory — zero file I/O.
+        private static unsafe bool TryGetInMemoryReference(Assembly asm, out MetadataReference reference)
+        {
+            reference = null!;
+            if (!asm.TryGetRawMetadata(out byte* blob, out int length)) return false;
+
+            var moduleMetadata = ModuleMetadata.CreateFromMetadata((IntPtr)blob, length);
+            var assemblyMetadata = AssemblyMetadata.Create(moduleMetadata);
+            reference = assemblyMetadata.GetReference();
+            return true;
         }
 
         // If the last statement of the submission is an ExpressionStatement whose
