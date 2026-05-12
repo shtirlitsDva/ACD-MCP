@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO;
 
 namespace Acd.Mcp.Serialization
@@ -50,7 +49,7 @@ namespace Acd.Mcp.Serialization
             {
                 // Seeding failure shouldn't take down the plugin — the user
                 // can still author DTOs in dto-user/.
-                Trace.WriteLine($"[DtoSystemSeeder] Seed failed: {ex.Message}");
+                SafeBoundary.Info("DtoSystemSeeder", $"Seed failed: {ex.Message}");
             }
         }
     }

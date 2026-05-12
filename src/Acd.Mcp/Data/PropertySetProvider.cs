@@ -38,24 +38,34 @@ namespace Acd.Mcp.Data
             try
             {
                 var aec = LoadAecAssembly();
-                if (aec is null) return;
+                if (aec is null)
+                {
+                    SafeBoundary.Info("PropertySetProvider",
+                        "AECC managed assembly not loaded (AecBaseMgd / AeccBaseMgd). PropertySets disabled — vanilla AutoCAD.");
+                    return;
+                }
 
-                var pds = aec.GetType("Autodesk.Aec.PropertyData.DatabaseServices.PropertyDataServices");
-                var ps = aec.GetType("Autodesk.Aec.PropertyData.DatabaseServices.PropertySet");
-                var psDef = aec.GetType("Autodesk.Aec.PropertyData.DatabaseServices.PropertySetDefinition");
-                var psData = aec.GetType("Autodesk.Aec.PropertyData.DatabaseServices.PropertySetData");
-                var pDef = aec.GetType("Autodesk.Aec.PropertyData.DatabaseServices.PropertyDefinition");
+                var missing = new List<string>();
+                var pds = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertyDataServices", missing);
+                var ps = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertySet", missing);
+                var psDef = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertySetDefinition", missing);
+                var psData = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertySetData", missing);
+                var pDef = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertyDefinition", missing);
 
                 if (pds is null || ps is null || psDef is null || psData is null || pDef is null)
+                {
+                    SafeBoundary.Info("PropertySetProvider",
+                        $"AECC types missing in {aec.GetName().Name}: {string.Join(", ", missing)}. PropertySets disabled.");
                     return;
+                }
 
-                _getPropertySets = pds.GetMethod("GetPropertySets", new[] { typeof(Entity) });
-                _propertySetDefinitionProp = ps.GetProperty("PropertySetDefinition");
-                _propertyNameToId = ps.GetMethod("PropertyNameToId", new[] { typeof(string) });
-                _getPropertySetDataAt = ps.GetMethod("GetPropertySetDataAt", new[] { typeof(int) });
-                _definitionsProp = psDef.GetProperty("Definitions");
-                _propertyDefinitionNameProp = pDef.GetProperty("Name");
-                _propertySetDataGetData = psData.GetMethod("GetData", Type.EmptyTypes);
+                _getPropertySets = ResolveMethod(pds, "GetPropertySets", new[] { typeof(Entity) }, missing);
+                _propertySetDefinitionProp = ResolveProperty(ps, "PropertySetDefinition", missing);
+                _propertyNameToId = ResolveMethod(ps, "PropertyNameToId", new[] { typeof(string) }, missing);
+                _getPropertySetDataAt = ResolveMethod(ps, "GetPropertySetDataAt", new[] { typeof(int) }, missing);
+                _definitionsProp = ResolveProperty(psDef, "Definitions", missing);
+                _propertyDefinitionNameProp = ResolveProperty(pDef, "Name", missing);
+                _propertySetDataGetData = ResolveMethod(psData, "GetData", Type.EmptyTypes, missing);
 
                 _available =
                     _getPropertySets is not null &&
@@ -65,13 +75,44 @@ namespace Acd.Mcp.Data
                     _definitionsProp is not null &&
                     _propertyDefinitionNameProp is not null &&
                     _propertySetDataGetData is not null;
+
+                if (!_available)
+                {
+                    SafeBoundary.Info("PropertySetProvider",
+                        $"AECC member resolution incomplete: {string.Join(", ", missing)}. PropertySets disabled.");
+                }
+                else
+                {
+                    SafeBoundary.Info("PropertySetProvider", $"AECC PropertySets available via {aec.GetName().Name}.");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // Any reflection failure → just disable. The user can still use
-                // the rest of the plugin.
+                SafeBoundary.Info("PropertySetProvider",
+                    $"Reflection probe threw: {ex.GetType().Name}: {ex.Message}. PropertySets disabled.");
                 _available = false;
             }
+        }
+
+        private static Type? ResolveType(Assembly asm, string fullName, List<string> missing)
+        {
+            var t = asm.GetType(fullName);
+            if (t is null) missing.Add($"type:{fullName}");
+            return t;
+        }
+
+        private static MethodInfo? ResolveMethod(Type t, string name, Type[] sig, List<string> missing)
+        {
+            var m = t.GetMethod(name, sig);
+            if (m is null) missing.Add($"method:{t.Name}.{name}");
+            return m;
+        }
+
+        private static PropertyInfo? ResolveProperty(Type t, string name, List<string> missing)
+        {
+            var p = t.GetProperty(name);
+            if (p is null) missing.Add($"prop:{t.Name}.{name}");
+            return p;
         }
 
         public Outcome<string> TryRead(Entity entity, Transaction tx, string key)

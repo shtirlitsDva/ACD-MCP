@@ -29,9 +29,9 @@ namespace Acd.Mcp.Batch.Ui
     //   - BatchExecutor.FileCompleted → append a row.
     //   - BatchExecutor.RunCompleted  → flip IsRunning off, update status.
     //
-    // Implements BatchUiState so the pipe RPC handler can read the
+    // Implements IBatchUiState so the pipe RPC handler can read the
     // current selection without coupling to WPF.
-    public sealed partial class BatchViewModel : ObservableObject, IDisposable, BatchUiState
+    public sealed partial class BatchViewModel : ObservableObject, IDisposable, IBatchUiState
     {
         private readonly BatchExecutor _executor;
         private readonly Dispatcher _dispatcher;
@@ -70,12 +70,12 @@ namespace Acd.Mcp.Batch.Ui
         public ObservableCollection<BatchFileResultViewModel> Results { get; } = new();
         public ObservableCollection<string> Files { get; } = new();
 
-        // BatchUiState surface — the pipe RPC handler reads these to forward
+        // IBatchUiState surface — the pipe RPC handler reads these to forward
         // the agent's "what files am I about to run on?" query.
-        string BatchUiState.CurrentFolder => Folder;
-        string BatchUiState.CurrentMask => Mask;
-        bool BatchUiState.Recurse => Recurse;
-        IReadOnlyList<string> BatchUiState.CurrentSelection => Files.ToArray();
+        string IBatchUiState.CurrentFolder => Folder;
+        string IBatchUiState.CurrentMask => Mask;
+        bool IBatchUiState.Recurse => Recurse;
+        IReadOnlyList<string> IBatchUiState.CurrentSelection => Files.ToArray();
 
         public BatchViewModel(BatchExecutor executor)
         {

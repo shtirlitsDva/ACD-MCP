@@ -29,7 +29,7 @@ namespace Acd.Mcp.Batch.Ui
             _vm.PropertyChanged += OnVmPropertyChanged;
         }
 
-        // Expose the VM so the palette can publish it as the BatchUiState
+        // Expose the VM so the palette can publish it as the IBatchUiState
         // implementation the pipe handler reads from.
         public BatchViewModel ViewModel => _vm;
 

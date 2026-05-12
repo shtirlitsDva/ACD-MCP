@@ -59,12 +59,17 @@ namespace Acd.Mcp.Batch
             IReadOnlyList<string> files,
             BatchMode mode,
             CancellationToken ct,
-            IProgress<BatchFileResult>? progress = null)
+            IProgress<BatchFileResult>? progress = null,
+            string? runId = null)
         {
             if (body is null) throw new ArgumentNullException(nameof(body));
             if (files is null) throw new ArgumentNullException(nameof(files));
 
-            var runId = NewRunId();
+            // runId may be provided by the caller (the pipe handler generates
+            // one up-front so the agent can poll acd-mcp://batch-runs/<id>
+            // immediately). If null, generate here — keeps the test-driven
+            // and UI-driven paths simple.
+            runId ??= NewRunId();
             var started = DateTimeOffset.Now;
 
             // Compile up front. A compile failure aborts before any file is
@@ -84,18 +89,17 @@ namespace Acd.Mcp.Batch
             }
             var script = ((Outcome<CompiledScript>.Pass)compile).Value;
 
-            // Cross-file state lives in one bag per run. Same instance for
-            // every per-file context, so `ctx.BatchState<T>()` returns the
-            // same T everywhere.
-            var stateBag = new BatchStateBag();
-
-            // Two-phase orchestration. Test-only: just Phase 1. Live: Phase
-            // 1 (test) first; abort if any failure; otherwise Phase 2 (live).
+            // Cross-file state lives in one bag PER PHASE — a fresh bag for
+            // Test, a fresh bag for Live. Why per phase, not per run:
+            // a renumbering script that allocates the next free integer per
+            // file relies on counters starting empty. After Test, counters
+            // are at N; reusing the bag for Live would start Live's counter
+            // at N too, producing wrong values. Each phase is a clean run.
             var aggregated = new List<BatchFileResult>();
 
             var testPhase = await RunPhaseAsync(
                 script, files, BatchPhase.Test, isLive: false,
-                stateBag, ct, progress, aggregated).ConfigureAwait(false);
+                new BatchStateBag(), ct, progress, aggregated).ConfigureAwait(false);
 
             if (ct.IsCancellationRequested)
             {
@@ -117,14 +121,10 @@ namespace Acd.Mcp.Batch
                     abortedReason: $"Live pass not started: {testPhase.FailedCount} file(s) failed the internal Test pass.");
             }
 
-            // A run state bag is intentionally REUSED across phases so that
-            // any state the Test pass built up is visible to the Live pass.
-            // For most scripts this is irrelevant; for cross-file counters
-            // it matches the user's mental model ("the same logic runs
-            // twice with the same state").
+            // Fresh bag for the Live phase. See comment above.
             await RunPhaseAsync(
                 script, files, BatchPhase.Live, isLive: true,
-                stateBag, ct, progress, aggregated).ConfigureAwait(false);
+                new BatchStateBag(), ct, progress, aggregated).ConfigureAwait(false);
 
             return Finish(runId, started, mode, files, aggregated,
                 cancelled: ct.IsCancellationRequested, abortedReason: null);

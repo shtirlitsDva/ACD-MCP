@@ -39,7 +39,7 @@ namespace Acd.Mcp.Ui
         }
 
         // Public so the plugin can wire the BATCH VM into the pipe handler
-        // as the BatchUiState provider.
+        // as the IBatchUiState provider.
         public BatchViewModel BatchViewModel => _batchControl.ViewModel;
 
         protected override void Dispose(bool disposing)

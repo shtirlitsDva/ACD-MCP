@@ -123,7 +123,7 @@ namespace Acd.Mcp
                 return;
             }
 
-            // The batch RPC handler needs a BatchUiState provider; until the
+            // The batch RPC handler needs a IBatchUiState provider; until the
             // palette is opened we fall back to an empty stub so agent calls
             // that depend on UI state fail loudly with a clear message.
             _listener ??= new PipeListener(_executor!, BatchRpcMethodHandler);
@@ -174,7 +174,7 @@ namespace Acd.Mcp
             }
 
             _palette ??= new ReplPaletteSet(_executor!, _session!, _log!, _batchExecutor!);
-            // The BATCH tab's view-model implements BatchUiState; once the
+            // The BATCH tab's view-model implements IBatchUiState; once the
             // palette exists, route the batch RPC handler at it so the agent
             // can query the user's current folder + mask + file selection.
             _batchRpc = new BatchRpcHandler(_batchExecutor!, _palette.BatchViewModel);

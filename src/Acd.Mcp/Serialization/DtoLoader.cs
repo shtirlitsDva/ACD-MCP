@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.IO;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
@@ -83,7 +82,7 @@ namespace Acd.Mcp.Serialization
             try { source = File.ReadAllText(path); }
             catch (Exception ex)
             {
-                Trace.WriteLine($"[DtoLoader] Read failed: {path}: {ex.Message}");
+                SafeBoundary.Info("DtoLoader", $"Read failed: {path}: {ex.Message}");
                 return;
             }
 
@@ -98,11 +97,11 @@ namespace Acd.Mcp.Serialization
             }
             catch (CompilationErrorException cex)
             {
-                Trace.WriteLine($"[DtoLoader] Compile error in {sourceTag}: {cex.Message}");
+                SafeBoundary.Info("DtoLoader", $"Compile error in {sourceTag}: {cex.Message}");
             }
             catch (Exception ex)
             {
-                Trace.WriteLine($"[DtoLoader] Runtime error in {sourceTag}: {ex.Message}");
+                SafeBoundary.Info("DtoLoader", $"Runtime error in {sourceTag}: {ex.Message}");
             }
         }
 

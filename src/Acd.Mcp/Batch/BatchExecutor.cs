@@ -117,6 +117,7 @@ namespace Acd.Mcp.Batch.Runtime
             CancellationTokenSource cts;
             Task<BatchRunReport> task;
             string body;
+            string runId = NewRunId();
             lock (_runLock)
             {
                 if (_activeRun is { IsCompleted: false })
@@ -124,7 +125,7 @@ namespace Acd.Mcp.Batch.Runtime
                 body = _currentScript;
                 cts = new CancellationTokenSource();
                 _activeCts = cts;
-                task = RunCoreAsync(body, files, mode, cts.Token);
+                task = RunCoreAsync(body, files, mode, runId, cts.Token);
                 _activeRun = task;
             }
             // Wire up history write + RunCompleted dispatch when the task
@@ -150,10 +151,14 @@ namespace Acd.Mcp.Batch.Runtime
                 }
             }, TaskScheduler.Default);
 
-            return "running"; // The actual run id lands inside the report
-                              // when RunCompleted fires; the caller wires up
-                              // to that event for the id.
+            return runId;
         }
+
+        // The run id format matches BatchRunner.NewRunId so the executor and
+        // the runner agree on what a run id looks like (the runner accepts
+        // the executor-supplied id and stamps it on the report).
+        private static string NewRunId() =>
+            DateTimeOffset.Now.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
 
         public void Cancel()
         {
@@ -168,7 +173,7 @@ namespace Acd.Mcp.Batch.Runtime
             new(_drawingHost, _probe, _scriptHost);
 
         private Task<BatchRunReport> RunCoreAsync(
-            string body, IReadOnlyList<string> files, BatchMode mode, CancellationToken ct)
+            string body, IReadOnlyList<string> files, BatchMode mode, string runId, CancellationToken ct)
         {
             // We hand the runner a synchronous IProgress; the executor
             // re-publishes to FileCompleted. WPF hosts marshal back to the
@@ -181,15 +186,16 @@ namespace Acd.Mcp.Batch.Runtime
             {
                 try
                 {
-                    return await NewRunner().RunAsync(body, files, mode, ct, progress)
+                    return await NewRunner().RunAsync(body, files, mode, ct, progress, runId)
                         .ConfigureAwait(false);
                 }
                 catch (BatchAbortedException ex)
                 {
                     // File-lease open failed → synthesise a "no results,
-                    // aborted" report so history still records the attempt.
+                    // aborted" report so history still records the attempt
+                    // under the same runId the caller already saw.
                     return new BatchRunReport(
-                        RunId: Guid.NewGuid().ToString("N").Substring(0, 8),
+                        RunId: runId,
                         StartedAt: DateTimeOffset.Now,
                         CompletedAt: DateTimeOffset.Now,
                         RequestedMode: mode,

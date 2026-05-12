@@ -31,9 +31,9 @@ namespace Acd.Mcp.Batch.Runtime
     internal sealed class BatchRpcHandler
     {
         private readonly BatchExecutor _executor;
-        private readonly BatchUiState _uiState;
+        private readonly IBatchUiState _uiState;
 
-        public BatchRpcHandler(BatchExecutor executor, BatchUiState uiState)
+        public BatchRpcHandler(BatchExecutor executor, IBatchUiState uiState)
         {
             _executor = executor;
             _uiState = uiState;
@@ -90,36 +90,18 @@ namespace Acd.Mcp.Batch.Runtime
                 throw new InvalidOperationException(
                     "No files are currently selected in the BATCH palette. Set a folder + mask first.");
 
-            // We need the run id BEFORE the run completes. Hook RunCompleted
-            // once with a tcs that captures the id.
-            var tcs = new TaskCompletionSource<string>();
-            EventHandler<BatchRunReport>? handler = null;
-            handler = (_, report) =>
-            {
-                tcs.TrySetResult(report.RunId);
-                _executor.RunCompleted -= handler!;
-            };
-            _executor.RunCompleted += handler;
+            // StartTestRun returns the real run_id immediately (generated
+            // before the worker task even starts). The agent polls
+            // acd-mcp://batch-runs/<run_id> for THAT specific run, so a
+            // concurrent UI Live run can't be mistaken for the agent's test.
+            var runId = _executor.StartTestRun(files);
 
-            try { _executor.StartTestRun(files); }
-            catch (Exception ex)
-            {
-                _executor.RunCompleted -= handler;
-                tcs.TrySetException(ex);
-            }
-
-            // Don't block on the run completing — return immediately with
-            // the run id once we have it. Spec calls for the agent to
-            // poll the results resource after the call returns.
             return Task.FromResult<object>(new
             {
-                // Spec says return run_id + results_resource immediately.
-                // We adopt the placeholder convention: synchronous return
-                // names the run; client polls the resource for the body.
-                run_id = "pending",
+                run_id = runId,
                 pending = true,
-                results_resource = "acd-mcp://batch-runs/last",
-                note = "Run started. Poll acd-mcp://batch-runs/last for the latest result.",
+                results_resource = $"acd-mcp://batch-runs/{runId}",
+                note = "Run started. Poll the results_resource URI until the report is complete.",
             });
         }
 
@@ -243,7 +225,7 @@ namespace Acd.Mcp.Batch.Runtime
 
     // The UI owns folder / mask / file list. The pipe queries via this
     // narrow read-only surface; the WPF view-model implements it.
-    public interface BatchUiState
+    public interface IBatchUiState
     {
         string CurrentFolder { get; }
         string CurrentMask { get; }
