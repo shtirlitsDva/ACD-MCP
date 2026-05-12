@@ -1,7 +1,8 @@
 using System.Windows.Controls;
-using System.Windows.Media;
+using System.Xml;
 using Acd.Mcp.Pipe;
 using ICSharpCode.AvalonEdit.Highlighting;
+using ICSharpCode.AvalonEdit.Highlighting.Xshd;
 
 namespace Acd.Mcp.Ui
 {
@@ -10,16 +11,19 @@ namespace Acd.Mcp.Ui
     //  1. Bridge AvalonEdit's plain Text property (not a DependencyProperty) to the
     //     VM's CurrentCode in both directions, with a re-entrancy guard.
     //
-    //  2. Apply dark-mode colours to AvalonEdit's syntax-highlighting table.
-    //     AvalonEdit owns its own per-token colour model (HighlightingColor with
-    //     HighlightingBrush); these are NOT WPF brushes resolved from a Style or
-    //     ResourceDictionary, so XAML cannot reach them. The memory entry on WPF
-    //     theming calls this out specifically: SDK-themed controls bypass the
-    //     style system for their internals.
+    //  2. Load our own dark-themed C# syntax-highlighting definition from the
+    //     embedded CSharp-Dark.xshd resource. We do NOT mutate
+    //     HighlightingManager.Instance's shared "C#" definition — that would
+    //     leak our colours into any other AvalonEdit instance running in the
+    //     same AutoCAD process. This is the SDK-themed-control carve-out from
+    //     the WPF theming memory: token colours bypass the WPF style system,
+    //     so they ship as a separate resource.
     //
-    //  Everything visual is otherwise in Theme.xaml — no inline colours here.
+    //  Everything else is in Theme.xaml — no inline colours here.
     public partial class ReplControl : UserControl, IDisposable
     {
+        private const string DarkSyntaxResourceName = "Acd.Mcp.Ui.Themes.CSharp-Dark.xshd";
+
         private readonly ReplViewModel _vm;
         private bool _suppressSync;
 
@@ -30,46 +34,30 @@ namespace Acd.Mcp.Ui
             _vm = new ReplViewModel(executor, log);
             DataContext = _vm;
 
-            ApplyDarkSyntaxColors();
+            ApplyDarkSyntax();
 
             Editor.TextChanged += OnEditorTextChanged;
             _vm.PropertyChanged += OnVmPropertyChanged;
         }
 
-        // Recolour the default "C#" HighlightingDefinition. The named colour list
-        // ("Keyword", "String", etc.) is defined in AvalonEdit's built-in CSharp-Mode.xshd.
-        // We override only the Foreground so font weights / italics stay default.
-        private void ApplyDarkSyntaxColors()
+        // Load CSharp-Dark.xshd from this assembly's embedded resources and
+        // assign it to the editor. Swallows on failure so the palette still
+        // opens with default colours rather than crashing.
+        private void ApplyDarkSyntax() => SafeBoundary.Run("ReplControl.ApplyDarkSyntax", () =>
         {
-            var def = Editor.SyntaxHighlighting;
-            if (def is null) return;
+            var asm = typeof(ReplControl).Assembly;
+            using var stream = asm.GetManifestResourceStream(DarkSyntaxResourceName);
+            if (stream is null)
+            {
+                SafeBoundary.Info("ApplyDarkSyntax",
+                    $"Embedded resource '{DarkSyntaxResourceName}' not found — falling back to default C# highlighting.");
+                return;
+            }
 
-            SetColor(def, "Keyword",       FromHex("#FF569CD6")); // VS Code dark "blue"
-            SetColor(def, "String",        FromHex("#FFCE9178")); // soft salmon
-            SetColor(def, "Char",          FromHex("#FFCE9178"));
-            SetColor(def, "Comment",       FromHex("#FF6A9955")); // muted green
-            SetColor(def, "Punctuation",   FromHex("#FFE1E1E1"));
-            SetColor(def, "ReferenceTypes", FromHex("#FF4EC9B0")); // teal for types
-            SetColor(def, "MethodCall",    FromHex("#FFDCDCAA")); // warm yellow
-            SetColor(def, "NumberLiteral", FromHex("#FFB5CEA8"));
-            SetColor(def, "Digits",        FromHex("#FFB5CEA8"));
-            SetColor(def, "ValueTypes",    FromHex("#FF569CD6"));
-            SetColor(def, "GetSetAddRemove", FromHex("#FF569CD6"));
-            SetColor(def, "TrueFalse",     FromHex("#FF569CD6"));
-            SetColor(def, "TypeKeywords",  FromHex("#FF569CD6"));
-        }
-
-        private static void SetColor(IHighlightingDefinition def, string name, Color foreground)
-        {
-            // Not every C# highlighting build has every name — guard each one so
-            // an SDK upgrade that drops a category doesn't crash plugin load.
-            var hc = def.GetNamedColor(name);
-            if (hc is null) return;
-            hc.Foreground = new SimpleHighlightingBrush(foreground);
-        }
-
-        private static Color FromHex(string hex) =>
-            (Color)ColorConverter.ConvertFromString(hex);
+            using var reader = XmlReader.Create(stream);
+            var definition = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+            Editor.SyntaxHighlighting = definition;
+        });
 
         private void OnEditorTextChanged(object? sender, EventArgs e) =>
             SafeBoundary.Run("ReplControl.Editor.TextChanged", () =>

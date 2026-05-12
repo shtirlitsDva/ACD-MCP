@@ -1,0 +1,284 @@
+<?xml version="1.0"?>
+<!--
+  Dark-themed C# syntax-highlighting definition for AvalonEdit.
+  Loaded explicitly at ReplControl construction so we own our own definition
+  rather than mutating HighlightingManager.Instance's shared C# definition
+  (which would leak our colours into any other AvalonEdit instance in the
+  AutoCAD process — e.g. DimensioneringV2's UI). VS-Code-dark-style colours.
+-->
+<SyntaxDefinition name="C#-Dark" extensions=".cs"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+    <Color name="Comment"           foreground="#FF6A9955" exampleText="// comment"/>
+    <Color name="String"            foreground="#FFCE9178" exampleText="string text = &quot;Hello, World!&quot;;"/>
+    <Color name="StringInterpolation" foreground="#FFE1E1E1" exampleText="string text = $&quot;Hello, {name}!&quot;;"/>
+    <Color name="Char"              foreground="#FFCE9178" exampleText="char linefeed = '\n';"/>
+    <Color name="Preprocessor"      foreground="#FFC586C0" exampleText="#region Title"/>
+    <Color name="Punctuation"       foreground="#FFE1E1E1" exampleText="a(b.c);"/>
+    <Color name="ValueTypes"        foreground="#FF569CD6" fontWeight="normal" exampleText="bool b = true;"/>
+    <Color name="ReferenceTypes"    foreground="#FF4EC9B0" exampleText="object o;"/>
+    <Color name="MethodCall"        foreground="#FFDCDCAA" fontWeight="normal" exampleText="o.ToString();"/>
+    <Color name="NumberLiteral"     foreground="#FFB5CEA8" exampleText="3.1415"/>
+    <Color name="ThisOrBaseReference" foreground="#FF569CD6" fontWeight="normal" exampleText="this.Do(); base.Do();"/>
+    <Color name="NullOrValueKeywords" foreground="#FF569CD6" fontWeight="normal" exampleText="if (foo == null) return;"/>
+    <Color name="Keywords"          foreground="#FF569CD6" fontWeight="normal" exampleText="if (a) {} else {}"/>
+    <Color name="GotoKeywords"      foreground="#FFC586C0" exampleText="continue; return null;"/>
+    <Color name="ContextKeywords"   foreground="#FF569CD6" exampleText="var a = 1;"/>
+    <Color name="ExceptionKeywords" foreground="#FFC586C0" exampleText="throw new Exception();"/>
+    <Color name="CheckedKeyword"    foreground="#FF569CD6" exampleText="checked { }"/>
+    <Color name="UnsafeKeywords"    foreground="#FF569CD6" exampleText="unsafe { fixed (int* a = ptr) ... }"/>
+    <Color name="OperatorKeywords"  foreground="#FFC586C0" exampleText="public static implicit operator..."/>
+    <Color name="ParameterModifiers" foreground="#FF569CD6" exampleText="(ref int a, params int[] b)"/>
+    <Color name="Modifiers"         foreground="#FF569CD6" exampleText="static readonly int a;"/>
+    <Color name="Visibility"        foreground="#FF569CD6" fontWeight="normal" exampleText="public override void ToString();"/>
+    <Color name="NamespaceKeywords" foreground="#FF569CD6" exampleText="namespace A.B { using C; }"/>
+    <Color name="GetSetAddRemove"   foreground="#FF569CD6" exampleText="int Prop { get; set; }"/>
+    <Color name="TrueFalse"         foreground="#FF569CD6" fontWeight="normal" exampleText="b = false; a = true;"/>
+    <Color name="TypeKeywords"      foreground="#FF569CD6" exampleText="if (x is int) { typeof(int) }"/>
+
+    <!-- Main C# rule set -->
+    <RuleSet name="CommentMarkerSet">
+        <Keywords fontWeight="bold" foreground="#FFE0726F">
+            <Word>TODO</Word>
+            <Word>FIXME</Word>
+        </Keywords>
+        <Keywords fontWeight="bold" foreground="#FFB5CEA8">
+            <Word>HACK</Word>
+            <Word>UNDONE</Word>
+        </Keywords>
+    </RuleSet>
+
+    <RuleSet>
+        <Span color="Preprocessor">
+            <Begin>\#</Begin>
+            <RuleSet name="PreprocessorSet">
+                <Span>
+                    <Begin>//</Begin>
+                </Span>
+            </RuleSet>
+        </Span>
+
+        <Span color="Comment" ruleSet="CommentMarkerSet">
+            <Begin>//</Begin>
+        </Span>
+
+        <Span color="Comment" ruleSet="CommentMarkerSet" multiline="true">
+            <Begin>/\*</Begin>
+            <End>\*/</End>
+        </Span>
+
+        <Span color="String">
+            <Begin>"</Begin>
+            <End>"</End>
+            <RuleSet>
+                <Span begin="\\" end="."/>
+            </RuleSet>
+        </Span>
+
+        <Span color="Char">
+            <Begin>'</Begin>
+            <End>'</End>
+            <RuleSet>
+                <Span begin="\\" end="."/>
+            </RuleSet>
+        </Span>
+
+        <Span color="String" multiline="true">
+            <Begin>@"</Begin>
+            <End>"</End>
+            <RuleSet>
+                <Span begin='""' end=""/>
+            </RuleSet>
+        </Span>
+
+        <Keywords color="ThisOrBaseReference">
+            <Word>this</Word>
+            <Word>base</Word>
+        </Keywords>
+
+        <Keywords color="NullOrValueKeywords">
+            <Word>null</Word>
+            <Word>value</Word>
+        </Keywords>
+
+        <Keywords color="Keywords">
+            <Word>as</Word>
+            <Word>is</Word>
+            <Word>new</Word>
+            <Word>sizeof</Word>
+            <Word>typeof</Word>
+            <Word>stackalloc</Word>
+            <Word>nameof</Word>
+        </Keywords>
+
+        <Keywords color="Keywords">
+            <Word>else</Word>
+            <Word>if</Word>
+            <Word>switch</Word>
+            <Word>case</Word>
+            <Word>default</Word>
+            <Word>do</Word>
+            <Word>for</Word>
+            <Word>foreach</Word>
+            <Word>in</Word>
+            <Word>while</Word>
+            <Word>lock</Word>
+            <Word>using</Word>
+            <Word>when</Word>
+        </Keywords>
+
+        <Keywords color="ExceptionKeywords">
+            <Word>try</Word>
+            <Word>throw</Word>
+            <Word>catch</Word>
+            <Word>finally</Word>
+        </Keywords>
+
+        <Keywords color="CheckedKeyword">
+            <Word>checked</Word>
+            <Word>unchecked</Word>
+        </Keywords>
+
+        <Keywords color="UnsafeKeywords">
+            <Word>fixed</Word>
+            <Word>unsafe</Word>
+        </Keywords>
+
+        <Keywords color="GotoKeywords">
+            <Word>break</Word>
+            <Word>continue</Word>
+            <Word>goto</Word>
+            <Word>return</Word>
+            <Word>yield</Word>
+        </Keywords>
+
+        <Keywords color="ContextKeywords">
+            <Word>var</Word>
+            <Word>where</Word>
+            <Word>from</Word>
+            <Word>select</Word>
+            <Word>group</Word>
+            <Word>into</Word>
+            <Word>orderby</Word>
+            <Word>join</Word>
+            <Word>let</Word>
+            <Word>on</Word>
+            <Word>equals</Word>
+            <Word>by</Word>
+            <Word>ascending</Word>
+            <Word>descending</Word>
+            <Word>dynamic</Word>
+            <Word>async</Word>
+            <Word>await</Word>
+            <Word>partial</Word>
+            <Word>global</Word>
+        </Keywords>
+
+        <Keywords color="OperatorKeywords">
+            <Word>explicit</Word>
+            <Word>implicit</Word>
+            <Word>operator</Word>
+        </Keywords>
+
+        <Keywords color="ParameterModifiers">
+            <Word>params</Word>
+            <Word>ref</Word>
+            <Word>out</Word>
+            <Word>in</Word>
+        </Keywords>
+
+        <Keywords color="Modifiers">
+            <Word>abstract</Word>
+            <Word>const</Word>
+            <Word>event</Word>
+            <Word>extern</Word>
+            <Word>override</Word>
+            <Word>readonly</Word>
+            <Word>sealed</Word>
+            <Word>static</Word>
+            <Word>virtual</Word>
+            <Word>volatile</Word>
+        </Keywords>
+
+        <Keywords color="Visibility">
+            <Word>public</Word>
+            <Word>protected</Word>
+            <Word>private</Word>
+            <Word>internal</Word>
+        </Keywords>
+
+        <Keywords color="NamespaceKeywords">
+            <Word>namespace</Word>
+            <Word>using</Word>
+        </Keywords>
+
+        <Keywords color="GetSetAddRemove">
+            <Word>add</Word>
+            <Word>remove</Word>
+            <Word>get</Word>
+            <Word>set</Word>
+        </Keywords>
+
+        <Keywords color="TrueFalse">
+            <Word>true</Word>
+            <Word>false</Word>
+        </Keywords>
+
+        <Keywords color="TypeKeywords">
+            <Word>class</Word>
+            <Word>struct</Word>
+            <Word>interface</Word>
+            <Word>enum</Word>
+            <Word>delegate</Word>
+            <Word>record</Word>
+        </Keywords>
+
+        <Keywords color="ValueTypes">
+            <Word>bool</Word>
+            <Word>byte</Word>
+            <Word>char</Word>
+            <Word>decimal</Word>
+            <Word>double</Word>
+            <Word>enum</Word>
+            <Word>float</Word>
+            <Word>int</Word>
+            <Word>long</Word>
+            <Word>sbyte</Word>
+            <Word>short</Word>
+            <Word>struct</Word>
+            <Word>uint</Word>
+            <Word>ulong</Word>
+            <Word>ushort</Word>
+            <Word>void</Word>
+            <Word>nint</Word>
+            <Word>nuint</Word>
+        </Keywords>
+
+        <Keywords color="ReferenceTypes">
+            <Word>object</Word>
+            <Word>string</Word>
+        </Keywords>
+
+        <!-- Numeric literals -->
+        <Rule color="NumberLiteral">
+            \b0[xX][0-9a-fA-F]+    # hex
+            |    \b
+            (    \d+(\.[0-9]+)?    # number with optional floating point
+            |    \.[0-9]+          # or just starting with floating point
+            )
+            ([eE][+-]?[0-9]+)?     # optional exponent
+            [uUlLfFdDmM]?          # optional suffix
+        </Rule>
+
+        <Rule color="Punctuation">
+            [?,.;()\[\]{}+\-/%*&lt;&gt;^+~!|&amp;]+
+        </Rule>
+
+        <!-- Method invocation: identifier followed by '(' -->
+        <Rule color="MethodCall">
+            \b
+            [\d\w_]+  # an identifier
+            (?=\s*\()  # followed by (
+        </Rule>
+    </RuleSet>
+</SyntaxDefinition>

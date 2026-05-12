@@ -19,32 +19,36 @@
 
     <!-- ════════════════════════════════════════════════════════════════════ -->
     <!--  COLOURS                                                              -->
-    <!--  Approximate AutoCAD 2025 dark chrome.                                -->
+    <!--  Blue-slate palette adopted from DimensioneringV2 — warmer than pure  -->
+    <!--  grey and reads much better against AutoCAD's own chrome.             -->
     <!-- ════════════════════════════════════════════════════════════════════ -->
 
-    <Color x:Key="Color.Bg.Window">#FF2E3236</Color>          <!-- palette body -->
-    <Color x:Key="Color.Bg.Surface">#FF383C40</Color>         <!-- content panels -->
-    <Color x:Key="Color.Bg.Control">#FF3E4246</Color>         <!-- button/textbox bg -->
-    <Color x:Key="Color.Bg.ControlHover">#FF4A4E52</Color>
-    <Color x:Key="Color.Bg.ControlPressed">#FF2A2D31</Color>
-    <Color x:Key="Color.Bg.RowHover">#FF40444A</Color>        <!-- list row hover -->
-    <Color x:Key="Color.Bg.Selected">#FF3A5570</Color>        <!-- subtle blue selection -->
-    <Color x:Key="Color.Bg.SelectedHover">#FF4A87C7</Color>
+    <Color x:Key="Color.Bg.Window">#FF2D3442</Color>          <!-- palette body, deepest -->
+    <Color x:Key="Color.Bg.Surface">#FF3B4453</Color>         <!-- toolbar/section strips -->
+    <Color x:Key="Color.Bg.Control">#FF4A5568</Color>         <!-- button bg -->
+    <Color x:Key="Color.Bg.ControlHover">#FF5A6A80</Color>
+    <Color x:Key="Color.Bg.ControlPressed">#FF6A7A90</Color>
+    <Color x:Key="Color.Bg.RowHover">#FF3B4453</Color>        <!-- list row hover -->
+    <Color x:Key="Color.Bg.Selected">#FF4A6B8A</Color>        <!-- blue selection -->
+    <Color x:Key="Color.Bg.SelectedHover">#FF6A9BBA</Color>
 
-    <Color x:Key="Color.Border.Subtle">#FF4A4E52</Color>
-    <Color x:Key="Color.Border.Focused">#FF4A87C7</Color>
+    <Color x:Key="Color.Bg.Inset">#FF252D3A</Color>           <!-- inset / read-only display bg -->
 
-    <Color x:Key="Color.Fg.Primary">#FFE1E1E1</Color>
-    <Color x:Key="Color.Fg.Secondary">#FFB0B0B0</Color>
-    <Color x:Key="Color.Fg.Disabled">#FF707070</Color>
-    <Color x:Key="Color.Fg.Failure">#FFE0726F</Color>
-    <Color x:Key="Color.Fg.Caret">#FFE1E1E1</Color>
+    <Color x:Key="Color.Border.Subtle">#FF5A6A80</Color>
+    <Color x:Key="Color.Border.Focused">#FF6A9BBA</Color>
 
-    <Color x:Key="Color.ScrollBar.Track">#FF2E3236</Color>
-    <Color x:Key="Color.ScrollBar.Thumb">#FF55595D</Color>
-    <Color x:Key="Color.ScrollBar.ThumbHover">#FF6A6E72</Color>
+    <Color x:Key="Color.Fg.Primary">#FFFFFFFF</Color>
+    <Color x:Key="Color.Fg.Secondary">#FFA0AEC0</Color>
+    <Color x:Key="Color.Fg.Disabled">#FF6A7280</Color>
+    <Color x:Key="Color.Fg.Failure">#FFFCA5A5</Color>
+    <Color x:Key="Color.Fg.Caret">#FFFFFFFF</Color>
 
-    <Color x:Key="Color.Accent">#FF4A87C7</Color>
+    <Color x:Key="Color.ScrollBar.Track">#FF2D3442</Color>
+    <Color x:Key="Color.ScrollBar.Thumb">#FF4A5568</Color>
+    <Color x:Key="Color.ScrollBar.ThumbHover">#FF5A6A80</Color>
+    <Color x:Key="Color.ScrollBar.ThumbDragging">#FF6A7A90</Color>
+
+    <Color x:Key="Color.Accent">#FF6A9BBA</Color>
 
     <!-- ════════════════════════════════════════════════════════════════════ -->
     <!--  BRUSHES                                                              -->
@@ -68,9 +72,12 @@
     <SolidColorBrush x:Key="Brush.Fg.Failure"         Color="{StaticResource Color.Fg.Failure}"/>
     <SolidColorBrush x:Key="Brush.Fg.Caret"           Color="{StaticResource Color.Fg.Caret}"/>
 
-    <SolidColorBrush x:Key="Brush.ScrollBar.Track"       Color="{StaticResource Color.ScrollBar.Track}"/>
-    <SolidColorBrush x:Key="Brush.ScrollBar.Thumb"       Color="{StaticResource Color.ScrollBar.Thumb}"/>
-    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbHover"  Color="{StaticResource Color.ScrollBar.ThumbHover}"/>
+    <SolidColorBrush x:Key="Brush.Bg.Inset"           Color="{StaticResource Color.Bg.Inset}"/>
+
+    <SolidColorBrush x:Key="Brush.ScrollBar.Track"        Color="{StaticResource Color.ScrollBar.Track}"/>
+    <SolidColorBrush x:Key="Brush.ScrollBar.Thumb"        Color="{StaticResource Color.ScrollBar.Thumb}"/>
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbHover"   Color="{StaticResource Color.ScrollBar.ThumbHover}"/>
+    <SolidColorBrush x:Key="Brush.ScrollBar.ThumbDragging" Color="{StaticResource Color.ScrollBar.ThumbDragging}"/>
 
     <SolidColorBrush x:Key="Brush.Accent"             Color="{StaticResource Color.Accent}"/>
 
@@ -241,7 +248,7 @@
                             <Setter TargetName="ThumbBg" Property="Background" Value="{DynamicResource Brush.ScrollBar.ThumbHover}"/>
                         </Trigger>
                         <Trigger Property="IsDragging" Value="True">
-                            <Setter TargetName="ThumbBg" Property="Background" Value="{DynamicResource Brush.ScrollBar.ThumbHover}"/>
+                            <Setter TargetName="ThumbBg" Property="Background" Value="{DynamicResource Brush.ScrollBar.ThumbDragging}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -505,13 +512,14 @@
         <Setter Property="Padding" Value="6,4"/>
     </Style>
 
-    <!-- Detail row container inside an expanded log entry. -->
+    <!-- Detail row container inside an expanded log entry. Uses the inset
+         (deepest) background so it visually nests inside the surface strips. -->
     <Style x:Key="Border.DetailBox" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource Brush.Bg.Window}"/>
+        <Setter Property="Background" Value="{DynamicResource Brush.Bg.Inset}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Subtle}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="6"/>
-        <Setter Property="CornerRadius" Value="2"/>
+        <Setter Property="CornerRadius" Value="3"/>
     </Style>
 
 </ResourceDictionary>
