@@ -152,10 +152,10 @@ ctx.Step(""always-fails"")
         }
 
         [Fact]
-        public async Task RequireFalse_RecordsSkipped_FileStillPasses()
+        public async Task RequireFalse_RecordsFailure_FileFails()
         {
-            // The script's only step is Skipped. No failures recorded;
-            // ctx.HasFailures stays false; the file is Pass.
+            // Require is HARD: a false predicate marks the step Failure and
+            // therefore the file Failure. See /acd-mcp:batch <step-dsl>.
             var body = @"
 ctx.Step(""bump"")
    .Require(""never"", () => false)
@@ -168,8 +168,9 @@ ctx.Step(""bump"")
             var report = await runner.RunAsync(body, new[] { "a.dwg" }, BatchMode.Test, CancellationToken.None);
 
             Assert.Single(report.Results);
-            Assert.Equal(FileOutcomeStatus.Pass, report.Results[0].Status);
-            Assert.IsType<StepOutcome.Skipped>(report.Results[0].Steps.Single());
+            Assert.Equal(FileOutcomeStatus.Failure, report.Results[0].Status);
+            var step = Assert.IsType<StepOutcome.Failure>(report.Results[0].Steps.Single());
+            Assert.IsType<RequireFailedException>(step.Error);
         }
 
         [Fact]

@@ -27,8 +27,11 @@ namespace Acd.Mcp.Batch.Tests
         }
 
         [Fact]
-        public void RequireFalsePredicate_ShortCircuits_To_Skipped_Apply_DoesNotRun()
+        public void RequireFalsePredicate_ShortCircuits_To_Failure_Apply_DoesNotRun()
         {
+            // Require is HARD: a false predicate produces Failure for the
+            // step (not Skipped). The Test pass exists to catch this before
+            // Live. See /acd-mcp:batch <step-dsl>.
             var ctx = NewCtx();
             bool appliedRan = false;
             var outcome = ctx.Step("a")
@@ -36,9 +39,10 @@ namespace Acd.Mcp.Batch.Tests
                 .Apply(() => { appliedRan = true; return "done"; });
 
             Assert.False(appliedRan);
-            Assert.IsType<StepOutcome.Skipped>(outcome);
-            Assert.Equal("nope", ((StepOutcome.Skipped)outcome).FailingRequirement);
-            Assert.False(ctx.HasFailures);
+            var failure = Assert.IsType<StepOutcome.Failure>(outcome);
+            Assert.IsType<RequireFailedException>(failure.Error);
+            Assert.Contains("'nope'", failure.Error.Message);
+            Assert.True(ctx.HasFailures);
         }
 
         [Fact]
@@ -66,7 +70,7 @@ namespace Acd.Mcp.Batch.Tests
         }
 
         [Fact]
-        public void MultipleRequires_RunInOrder_ShortCircuitsOnFirstFalse()
+        public void MultipleRequires_RunInOrder_ShortCircuitsOnFirstFalse_AsFailure()
         {
             var ctx = NewCtx();
             bool secondCalled = false;
@@ -75,9 +79,11 @@ namespace Acd.Mcp.Batch.Tests
                 .Require("second", () => { secondCalled = true; return true; })
                 .Apply(() => "done");
 
-            Assert.IsType<StepOutcome.Skipped>(outcome);
+            var failure = Assert.IsType<StepOutcome.Failure>(outcome);
             Assert.False(secondCalled);
-            Assert.Equal("first", ((StepOutcome.Skipped)outcome).FailingRequirement);
+            Assert.IsType<RequireFailedException>(failure.Error);
+            Assert.Contains("'first'", failure.Error.Message);
+            Assert.True(ctx.HasFailures);
         }
 
         [Fact]

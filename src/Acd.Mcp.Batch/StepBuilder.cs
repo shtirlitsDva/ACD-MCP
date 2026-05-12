@@ -3,6 +3,15 @@ using System.Collections.Generic;
 
 namespace Acd.Mcp.Batch
 {
+    // Thrown internally when a Require predicate returns false. Carried as
+    // StepOutcome.Failure.Error so the per-file result can render a clean
+    // message and the persisted run history can tell "predicate returned
+    // false" apart from a predicate that threw something domain-specific.
+    public sealed class RequireFailedException : System.Exception
+    {
+        public RequireFailedException(string message) : base(message) { }
+    }
+
     // Fluent step. Evaluates predicates lazily — they only run inside Apply
     // so that the chain can be built without side-effects until the user
     // (script body) commits to executing it.
@@ -60,8 +69,13 @@ namespace Acd.Mcp.Batch
 
                 if (!passed)
                 {
-                    // First failing requirement short-circuits the chain.
-                    var outcome = new StepOutcome.Skipped(_name, results, rname);
+                    // Require is HARD. A false predicate produces Failure (not
+                    // Skipped); the Test pass is where this is caught before
+                    // Live. Branching logic belongs in `if` inside Apply.
+                    // See /acd-mcp:batch <step-dsl>.
+                    var error = new RequireFailedException(
+                        $"Require '{rname}' returned false");
+                    var outcome = new StepOutcome.Failure(_name, results, error);
                     _ctx.Record(outcome);
                     return outcome;
                 }

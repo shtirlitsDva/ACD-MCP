@@ -67,23 +67,30 @@ namespace Acd.Mcp.Batch.Runtime
 
         private Task<object> HandleRunTestAsync(JsonElement p, CancellationToken ct)
         {
-            var name = GetRequiredString(p, "name");
-            // The agent's run_test reference is the saved name; if it
-            // matches a stored script we push that body to the editor
-            // before running, so the live-shared slot is in sync with
-            // what we tell the runner. If the editor already mirrors the
-            // saved body (typical case right after proposeScript), the
-            // push is idempotent.
-            var saved = _executor.Scripts.TryGet(ScriptFlavor.Batch, name)
-                ?? throw new InvalidOperationException(
-                    $"No saved batch script named '{name}'. Call batch.proposeScript first.");
+            // name is OPTIONAL. With a name, we load that saved script into
+            // the editor first (legacy / explicit path). Without a name, we
+            // run whatever the live editor buffer currently holds — that's
+            // the common case right after batch.proposeScript and matches
+            // what the user sees in the palette.
+            var name = GetOptionalString(p, "name");
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                var saved = _executor.Scripts.TryGet(ScriptFlavor.Batch, name!)
+                    ?? throw new InvalidOperationException(
+                        $"No saved batch script named '{name}'. Call batch.proposeScript first, or omit `name` to run the editor buffer.");
 
-            // Push back into the editor as the live-shared slot. We do NOT
-            // honour an "unsaved edits" dialog here — if the user has
-            // dirty edits, the UI's prompt is the authoritative arbiter;
-            // the pipe path simply pushes. The UI subscribes to the
-            // ScriptProposed event and decides.
-            _executor.ProposeScript(saved.Name, saved.Body, saved.Summary);
+                // Push back into the editor as the live-shared slot. We do
+                // NOT honour an "unsaved edits" dialog here — if the user
+                // has dirty edits, the UI's prompt is the authoritative
+                // arbiter; the pipe path simply pushes. The UI subscribes
+                // to the ScriptProposed event and decides.
+                _executor.ProposeScript(saved.Name, saved.Body, saved.Summary);
+            }
+            else if (string.IsNullOrWhiteSpace(_executor.CurrentScript))
+            {
+                throw new InvalidOperationException(
+                    "BATCH editor buffer is empty. Either pass a saved-script `name`, or call batch.proposeScript first.");
+            }
 
             var files = _uiState.CurrentSelection;
             if (files.Count == 0)

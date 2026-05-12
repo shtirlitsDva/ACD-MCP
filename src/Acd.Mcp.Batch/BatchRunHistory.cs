@@ -229,11 +229,14 @@ namespace Acd.Mcp.Batch
 
     internal sealed class StepOutcomeEnvelope
     {
-        public string Kind { get; set; } = ""; // Pass | Skipped | Failure
+        // Persisted Kind. Going forward we only write "Pass" and "Failure";
+        // "Skipped" is still recognised on read for legacy runs (rehydrated
+        // as Failure with a synthesised RequireFailedException).
+        public string Kind { get; set; } = ""; // Pass | Failure (legacy: Skipped)
         public string Name { get; set; } = "";
         public List<RequirementResultEnvelope> Requirements { get; set; } = new();
         public string? Summary { get; set; }
-        public string? FailingRequirement { get; set; }
+        public string? FailingRequirement { get; set; } // legacy field, read-only
         public string? ErrorType { get; set; }
         public string? ErrorMessage { get; set; }
 
@@ -245,13 +248,6 @@ namespace Acd.Mcp.Batch
                 Name = p.Name,
                 Requirements = p.Requirements.Select(RequirementResultEnvelope.From).ToList(),
                 Summary = p.Summary,
-            },
-            StepOutcome.Skipped sk => new()
-            {
-                Kind = "Skipped",
-                Name = sk.Name,
-                Requirements = sk.Requirements.Select(RequirementResultEnvelope.From).ToList(),
-                FailingRequirement = sk.FailingRequirement,
             },
             StepOutcome.Failure f => new()
             {
@@ -269,9 +265,14 @@ namespace Acd.Mcp.Batch
             "Pass" => new StepOutcome.Pass(Name,
                 Requirements.Select(r => r.ToResult()).ToList(),
                 Summary ?? ""),
-            "Skipped" => new StepOutcome.Skipped(Name,
+            // Legacy: pre-Require-is-HARD history entries used Skipped for a
+            // false Require. Rehydrate as Failure so live UI + downstream
+            // tooling sees a uniform schema. The synthesised exception
+            // preserves the original failing requirement name.
+            "Skipped" => new StepOutcome.Failure(Name,
                 Requirements.Select(r => r.ToResult()).ToList(),
-                FailingRequirement ?? ""),
+                new RequireFailedException(
+                    $"Require '{FailingRequirement ?? "?"}' returned false (legacy run)")),
             "Failure" => new StepOutcome.Failure(Name,
                 Requirements.Select(r => r.ToResult()).ToList(),
                 new BatchPersistedError(ErrorType, ErrorMessage ?? "")),

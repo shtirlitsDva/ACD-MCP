@@ -138,6 +138,16 @@ namespace Acd.Mcp.Batch.Runtime
                     SafeBoundary.Run("BatchExecutor.HistorySave", () => History.Save(report));
                     SafeBoundary.Run("BatchExecutor.RunCompleted",
                         () => RunCompleted?.Invoke(this, report));
+
+                    // Explicit completion marker — the /acd-mcp:batch skill
+                    // tells the agent to watch %LOCALAPPDATA%\Acd.Mcp\log.txt
+                    // for this exact line with the Monitor tool, so agents
+                    // wake up once instead of polling acd-mcp://batch-runs.
+                    int pass = 0;
+                    foreach (var r in report.Results)
+                        if (r.Status == FileOutcomeStatus.Pass) pass++;
+                    SafeBoundary.Info("BatchExecutor",
+                        $"BATCH RUN COMPLETED {report.RunId} ({pass}/{report.Results.Count})");
                 }
                 else if (t.Exception is { } ex)
                 {

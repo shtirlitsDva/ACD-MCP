@@ -5,18 +5,18 @@ namespace Acd.Mcp.Batch
 {
     // Per-step result, recorded once per Step.Apply chain in the script body.
     //
-    // Three cases:
+    // Two cases:
     //   Pass     — every Require predicate returned true; Apply ran and produced
     //              a summary string.
-    //   Skipped  — at least one Require predicate returned false. Apply was
-    //              NOT invoked. Records the first failing requirement so the
-    //              user knows which one caused the skip.
-    //   Failure  — a Require predicate threw, or Apply threw. The file is
-    //              treated as failed (no commit even in Live mode).
+    //   Failure  — a Require predicate returned false OR threw, OR Apply threw.
+    //              The file is treated as failed (no commit even in Live mode).
+    //              Require is a HARD precondition (see /acd-mcp:batch skill
+    //              <step-dsl>): branching belongs in `if` inside Apply, not in
+    //              Require. There is no Skipped case anymore — the Test pass
+    //              exists to catch a false Require before Live.
     //
-    // Naming note: earlier drafts called the failure case "Crashed" — that
-    // name conflicted with AutoCAD usage where "crash" means the process
-    // died. Renamed to Failure.
+    // Backward compat: persisted history with Kind="Skipped" is rehydrated
+    // as Failure (see BatchRunHistory.StepOutcomeEnvelope.ToOutcome).
     public abstract record StepOutcome
     {
         private protected StepOutcome(string name) { Name = name; }
@@ -26,19 +26,14 @@ namespace Acd.Mcp.Batch
         public sealed record Pass(string Name, IReadOnlyList<RequirementResult> Requirements, string Summary)
             : StepOutcome(Name);
 
-        public sealed record Skipped(string Name, IReadOnlyList<RequirementResult> Requirements, string FailingRequirement)
-            : StepOutcome(Name);
-
         public sealed record Failure(string Name, IReadOnlyList<RequirementResult> Requirements, Exception Error)
             : StepOutcome(Name);
 
         public TOut Match<TOut>(
             Func<Pass, TOut> onPass,
-            Func<Skipped, TOut> onSkipped,
             Func<Failure, TOut> onFailure) => this switch
             {
                 Pass p => onPass(p),
-                Skipped s => onSkipped(s),
                 Failure f => onFailure(f),
                 _ => throw new InvalidOperationException(
                     $"Unhandled StepOutcome case: {GetType().Name}"),

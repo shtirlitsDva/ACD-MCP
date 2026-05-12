@@ -271,7 +271,6 @@ namespace Acd.Mcp.Batch.Ui
                 return lastStep switch
                 {
                     StepOutcome.Pass p => p.Summary,
-                    StepOutcome.Skipped sk => $"skipped ({sk.FailingRequirement})",
                     StepOutcome.Failure f => f.Error.Message,
                     _ => "",
                 };
