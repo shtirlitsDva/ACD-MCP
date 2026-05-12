@@ -9,7 +9,17 @@
          plugin folder (DevReload's AssemblyDependencyResolver path). -->
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <!-- WPF needed for the REPL palette. PresentationFramework / PresentationCore /
+         WindowsBase / System.Xaml must be added to DevReload's shared-assemblies
+         list so XAML resolves to the same types AutoCAD already uses. -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />

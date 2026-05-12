@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace Acd.Mcp.Scripting
 {
     // Per-call redirection of Console.Out / Console.Error to StringWriters so

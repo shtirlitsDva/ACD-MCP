@@ -152,7 +152,8 @@ namespace Acd.Mcp.Pipe
                         {
                             timeoutMs = to;
                         }
-                        var result = await _executor.ExecuteAsync(codeEl.GetString()!, timeoutMs, ct)
+                        var result = await _executor
+                            .ExecuteAsync(codeEl.GetString()!, timeoutMs, ExecutionSource.Mcp, ct)
                             .ConfigureAwait(false);
                         return JsonRpcResponse.Ok(req.Id, result);
 

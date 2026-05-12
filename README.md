@@ -79,6 +79,11 @@ Recommended inner loop. Requires [DevReload](https://github.com/shtirlitsDva/Dev
 | `ACDMCP_STOP` | Stop the listener. |
 | `ACDMCP_STATUS` | Report listener state, PID, pipe name, session state. |
 | `ACDMCP_RESET` | Drop the script session — variables/usings declared so far are gone. |
+| `ACDMCP_PALETTE` | Open the dockable REPL palette (AvalonEdit + C# highlighting + live execution log). Shares the script session with the MCP, so `var x = 5` typed in the palette is visible to the LLM's next `autocad_execute_csharp` call, and vice versa. |
+
+### Palette / WPF note
+
+The palette uses WPF. Under DevReload, add these to the plugin's shared-assemblies list so XAML types resolve consistently across the collectible ALC boundary: `PresentationFramework`, `PresentationCore`, `WindowsBase`, `System.Xaml`. (AvalonEdit and CommunityToolkit.Mvvm are loaded only by the plugin and stay in its ALC — no sharing needed.)
 
 ## MCP tools exposed
 

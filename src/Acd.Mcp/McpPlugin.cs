@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Acd.Mcp.Pipe;
 using Acd.Mcp.Scripting;
+using Acd.Mcp.Ui;
 using Autodesk.AutoCAD.Runtime;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
 using SynchronizationContext = System.Threading.SynchronizationContext;
@@ -26,13 +27,15 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v3-slice3";
+        private const string Version = "v4-palette";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
         private static ScriptSession? _session;
         private static AcadExecutor? _executor;
+        private static ExecutionLog? _log;
         private static PipeListener? _listener;
+        private static ReplPaletteSet? _palette;
         private static SynchronizationContext? _mainSync;
 
         public void Initialize()
@@ -50,10 +53,19 @@ namespace Acd.Mcp
 
         public void Terminate()
         {
+            // Order matters: dispose palette before dropping executor/log/session it
+            // references. Each step swallows so one failure cannot skip the next —
+            // the plugin assembly must come down cleanly for ALC unload to succeed.
+            try { _palette?.Close(); } catch { }
+            try { _palette?.Dispose(); } catch { }
+            _palette = null;
+
             try { _listener?.Stop(); } catch { }
-            _listener?.Dispose();
+            try { _listener?.Dispose(); } catch { }
             _listener = null;
+
             _executor = null;
+            _log = null;
             _session = null;
             _mainSync = null;
             Log($"Terminate() {Version}");
@@ -72,14 +84,15 @@ namespace Acd.Mcp
             var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
             if (ed is null) return;
 
-            if (_mainSync is null)
+            try
             {
-                ed.WriteMessage("\n[ACD-MCP] Cannot start: SynchronizationContext was not captured at Initialize().\n");
+                EnsureCore();
+            }
+            catch (InvalidOperationException ex)
+            {
+                ed.WriteMessage($"\n[ACD-MCP] {ex.Message}\n");
                 return;
             }
-
-            _session ??= new ScriptSession();
-            _executor ??= new AcadExecutor(_mainSync, _session);
 
             if (_listener is { IsRunning: true })
             {
@@ -87,7 +100,7 @@ namespace Acd.Mcp
                 return;
             }
 
-            _listener ??= new PipeListener(_executor);
+            _listener ??= new PipeListener(_executor!);
             _listener.Start();
             ed.WriteMessage($"\n[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.\n");
         }
@@ -114,15 +127,51 @@ namespace Acd.Mcp
             ed.WriteMessage($"\n  PID:        {Process.GetCurrentProcess().Id}");
             ed.WriteMessage($"\n  Listener:   {(_listener is { IsRunning: true } ? $"running on '{_listener.PipeName}'" : "stopped")}");
             ed.WriteMessage($"\n  Session:    {(_session is null ? "uninitialized" : "ready")}");
+            ed.WriteMessage($"\n  Palette:    {(_palette is null ? "not opened" : (_palette.Visible ? "visible" : "hidden"))}");
             ed.WriteMessage("\n");
         }
 
         [CommandMethod("ACDMCP_RESET")]
         public static void ResetSession()
         {
-            _session?.Reset();
+            _executor?.Reset();
             var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
             ed?.WriteMessage("\n[ACD-MCP] Script session reset.\n");
+        }
+
+        [CommandMethod("ACDMCP_PALETTE")]
+        public static void ShowPalette()
+        {
+            var ed = Application.DocumentManager.MdiActiveDocument?.Editor;
+            if (ed is null) return;
+
+            try
+            {
+                EnsureCore();
+            }
+            catch (InvalidOperationException ex)
+            {
+                ed.WriteMessage($"\n[ACD-MCP] {ex.Message}\n");
+                return;
+            }
+
+            _palette ??= new ReplPaletteSet(_executor!, _log!);
+            _palette.Visible = true;
+        }
+
+        // Lazy-init the in-process core (log, session, executor). Called by any
+        // command that needs them; the listener and the palette both go through
+        // here so opening the palette without starting the listener Just Works,
+        // and vice versa.
+        private static void EnsureCore()
+        {
+            if (_mainSync is null)
+                throw new InvalidOperationException(
+                    "Plugin not initialized: SynchronizationContext was not captured.");
+
+            _log ??= new ExecutionLog();
+            _session ??= new ScriptSession();
+            _executor ??= new AcadExecutor(_mainSync, _session, _log);
         }
 
         private static void Log(string msg)

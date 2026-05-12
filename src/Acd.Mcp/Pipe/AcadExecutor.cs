@@ -9,27 +9,44 @@ namespace Acd.Mcp.Pipe
     //   - acquiring a document lock for the snippet's duration
     //   - linking caller cancellation with a per-call timeout
     //   - turning every failure mode into an ExecuteResult instead of an exception
+    //   - appending the (code, result, source) tuple to the shared ExecutionLog so
+    //     the palette and any future observer see the same stream of activity
     //
     // Transports (named pipe today, HTTP later if needed) hand a string of C# to
     // ExecuteAsync and forward the result. They do not learn anything about threads,
-    // documents, locks, or the script session.
+    // documents, locks, logging, or the script session.
     public sealed class AcadExecutor
     {
         private readonly SynchronizationContext _mainSync;
         private readonly ScriptSession _session;
+        private readonly ExecutionLog _log;
 
-        public AcadExecutor(SynchronizationContext mainSync, ScriptSession session)
+        public AcadExecutor(SynchronizationContext mainSync, ScriptSession session, ExecutionLog log)
         {
             _mainSync = mainSync;
             _session = session;
+            _log = log;
         }
 
-        public Task<ExecuteResult> ExecuteAsync(string code, int? timeoutMs, CancellationToken outerCt)
+        public async Task<ExecuteResult> ExecuteAsync(
+            string code,
+            int? timeoutMs,
+            ExecutionSource source,
+            CancellationToken outerCt)
+        {
+            var result = await ExecuteCoreAsync(code, timeoutMs, outerCt).ConfigureAwait(false);
+            _log.Add(new LogEntry(DateTimeOffset.Now, source, code, result));
+            return result;
+        }
+
+        public void Reset() => _session.Reset();
+
+        private Task<ExecuteResult> ExecuteCoreAsync(string code, int? timeoutMs, CancellationToken outerCt)
         {
             var tcs = new TaskCompletionSource<ExecuteResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // CTS lifetime tied to the returned Task — the local async wrapper below
-            // disposes them only after tcs has completed.
+            // CTS lifetime tied to the returned Task — AwaitAndDisposeAsync disposes
+            // them only after tcs has settled.
             var perCallCts = new CancellationTokenSource();
             if (timeoutMs is int ms && ms > 0) perCallCts.CancelAfter(ms);
             var linked = CancellationTokenSource.CreateLinkedTokenSource(outerCt, perCallCts.Token);
@@ -64,8 +81,6 @@ namespace Acd.Mcp.Pipe
 
             return AwaitAndDisposeAsync(tcs.Task, perCallCts, linked);
         }
-
-        public void Reset() => _session.Reset();
 
         private static async Task<ExecuteResult> AwaitAndDisposeAsync(
             Task<ExecuteResult> inner, CancellationTokenSource a, CancellationTokenSource b)
