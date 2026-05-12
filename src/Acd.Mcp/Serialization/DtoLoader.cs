@@ -25,13 +25,15 @@ namespace Acd.Mcp.Serialization
     public sealed class DtoLoader
     {
         private readonly DtoRegistry _registry;
+        private readonly DtoDataProviderApi _dataProvider;
         private readonly Dictionary<string, DateTime> _mtimes = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _gate = new();
         private ScriptOptions? _options;
 
-        public DtoLoader(DtoRegistry registry)
+        public DtoLoader(DtoRegistry registry, DtoDataProviderApi dataProvider)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+            _dataProvider = dataProvider ?? throw new ArgumentNullException(nameof(dataProvider));
         }
 
         // Wipe and re-populate from scratch. Use on plugin startup and any
@@ -86,7 +88,7 @@ namespace Acd.Mcp.Serialization
             }
 
             var sourceTag = $"{tag}:{Path.GetFileName(path)}";
-            var api = new DtoRegistrationApi(_registry, sourceTag);
+            var api = new DtoRegistrationApi(_registry, _dataProvider, sourceTag);
             var globals = new DtoRegistrationGlobals(api);
 
             try
