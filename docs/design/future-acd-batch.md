@@ -1,162 +1,313 @@
 <!--
-Feature spec — second draft.
-Captured from user voice + revdiff annotations on 2026-05-12.
-Not implemented. Designed for an autonomous subagent (Opus 4.7 high) working
-in a worktree, TDD red-green, with a test harness that exercises every facet
-WITHOUT invoking AutoCAD.
+Feature spec — third draft.
+Captured iteratively via revdiff passes. Each revision narrows the design.
+Not implemented. Designed to be handed to an autonomous Opus 4.7 high subagent
+working in an isolated worktree, TDD red-green, with a test harness that
+exercises every facet WITHOUT a live AutoCAD process.
 -->
 
 <status>idea / spec — not implemented, not scheduled</status>
 
 <the-key-pivot>
-The agent does NOT drive batch execution. The agent writes only the *body* of
-a batch script — the code that goes inside the try block of a fully-standardised
-per-file loop. That script body arrives in the BATCH palette's editor with a
-short telegram-style name. The user reviews, optionally edits inputs, flips a
-slide-switch between Test and Live, and clicks Run. The user owns execution.
-The runtime owns DB loading, transaction lifetime, try/catch, save-or-skip.
-The script body owns: what changes.
+Two execution modes coexist:
+
+* **Autonomous-agent mode.** The user says: "in this folder I have these
+  drawings, do X across all of them." The agent uses the live REPL to
+  explore the active drawing, designs a batch script, pushes it to the
+  BATCH palette editor, drives test runs (allowed), reviews results, iterates
+  until the script is clean, and flags "safe to execute". The user then
+  flips the Live switch and clicks Run. **Live execution is always the
+  user's click.** There is no agent verb that runs Live mode.
+
+* **User-driven mode.** The user writes / edits the script in the editor
+  directly (or loads a saved one) and runs it. The agent is not in the loop.
+
+In both modes the runtime owns the boilerplate: DB loading, file
+accessibility, transaction lifetime, try/catch, rollback-or-commit, save.
+The script body owns "what changes," nothing else.
+
+Crucially: the script editor is a **live-shared slot**. The agent pushes a
+new version → the editor updates immediately. The user types in the editor
+→ the runtime executes that text. The runtime never reads anything other
+than what is currently in the slot. There is no separate "agent script"
+and "user script" — there is one script, and both sides can edit it.
 </the-key-pivot>
 
 <precondition>
 The MCP must actually be reachable from Claude / Codex / etc. first. The bridge
-exists; it just needs registration in the user's MCP client config and one
-successful round-trip from a real LLM session. Don't begin this work before
-that verification.
+exists; it needs registration in a real MCP client and one successful round-trip.
+Do not begin this work before that verification.
 </precondition>
 
+<distribution>
+This whole thing ships as a **Claude plugin** registered via the `/plugin`
+system, not as separate hand-assembled artefacts. The plugin bundle layout:
+
+  acd-mcp/
+    .claude-plugin/
+      plugin.json                          ← registers MCP server, lists skills
+      skills/
+        acd-batch/SKILL.md                 ← drives the autonomous batch flow
+        acd-mcp-add-dto/SKILL.md           ← teaches the agent how to add DTOs
+      mcp/
+        Acd.Mcp.Bridge/                    ← the stdio MCP binary + deps
+    autocad-bundle/
+      ACD-MCP.bundle/
+        PackageContents.xml
+        Contents/
+          Acd.Mcp.dll
+          ICSharpCode.AvalonEdit.dll
+          CommunityToolkit.Mvvm.dll
+          ...
+
+On install, the plugin:
+1. Registers the bridge as an MCP server in the user's Claude client config.
+2. Copies `autocad-bundle/ACD-MCP.bundle/` to
+   `%APPDATA%\Autodesk\ApplicationPlugins\ACD-MCP.bundle\`. AutoCAD picks
+   up bundles from that folder automatically on next launch. AutoCAD must
+   be closed when updating the bundle (the file is locked otherwise).
+3. Seeds `%APPDATA%\Acd.Mcp\dto\` and `%APPDATA%\Acd.Mcp\scripts\<flavor>\`
+   with starter content if those folders don't already exist.
+
+Reference bundle layout to mirror:
+`C:\Users\MichailGolubjev\AppData\Roaming\Autodesk\ApplicationPlugins\DevReload.bundle\`
+(`PackageContents.xml` at root, `Contents/` folder with all DLLs).
+</distribution>
+
 <reference-projects>
-Before designing anything, the implementing agent MUST read:
+Two existing user projects to read before designing anything:
 
 1. `C:\Users\MichailGolubjev\Desktop\GitHub\shtirlitsDva\Autocad-Civil3d-Tools\Acad-C3D-Tools\IntersectUtilities\BatchProcessing\01 BatchProcessing.cs`
-   — the user's existing batch loop. The nested `using Database / using Transaction / try-catch`
-   shape, the Result + ResultStatus convention, AbortGracefully — those are
-   load-bearing patterns that work in production today.
+   — the user's production batch loop. Read it for the **shape** (nested
+   using/using/try-catch, side-loaded Database, per-file iteration,
+   Result+Status reporting). **Do not copy its style.** The user explicitly
+   labelled it "rookie code." The implementation must use a real-world
+   pattern — Result/Maybe-style discriminated unions, not bare enums + ad-hoc
+   `AbortGracefully` calls. Treat the original as proof the AutoCAD calls
+   work, not as a template for the code.
 
 2. `C:\Users\MichailGolubjev\Desktop\GitHub\shtirlitsDva\Autocad-Civil3d-Tools\Acad-C3D-Tools\IntersectUtilities\BatchProcessing\BPUIv2\UI\`
-   — the file-selector + mask filter UI. Steal `DrawingList` and `FilterEditor`
-   patterns; ignore `SequenceComposer` (the LLM replaces it — there are no
-   pre-defined blocks anymore).
+   — file-selector + mask filter UI. `DrawingList` and `FilterEditor` are
+   reusable. Skip `SequenceComposer` (the agent replaces it).
 </reference-projects>
 
 <runtime-shape>
-The plugin compiles every batch script into a method body inside this exact
-template:
+The runtime compiles the script body into a delegate and invokes it inside
+a fixed per-file loop. Conceptually (real implementation uses a
+discriminated `Outcome<T>` or similar over bare exceptions):
 
-  using var xDb = new Database(false, true);
-  xDb.ReadDwgFile(path, FileShare.ReadWrite, allowCPConversion: false, password: "");
-  using var xTx = xDb.TransactionManager.StartTransaction();
-  try
+  foreach (var path in batch.Files)
   {
-      // ─── INJECTED SCRIPT BODY STARTS ─────────────────────────
-      <user-script-body>
-      // ─── INJECTED SCRIPT BODY ENDS ───────────────────────────
+      ct.ThrowIfCancellationRequested();
 
-      if (mode == Live && !ctx.HasFailures)
+      var openResult = FileAccess.TryOpen(path, mode);
+      if (openResult is Locked locked)
+      {
+          report.Skip(path, "file is locked: " + locked.By);
+          continue;
+      }
+
+      using var xDb = new Database(false, true);
+      // Live: ReadDwgFile + write-back share; Test: ReadAllShare
+      xDb.ReadDwgFile(path, mode == Live ? FileShare.Read : FileShare.ReadWrite,
+                      allowCPConversion: false, password: "");
+
+      using var xTx = xDb.TransactionManager.StartTransaction();
+      var ctx = new BatchContext(xDb, xTx, mode, batchState, ct);
+
+      Outcome bodyOutcome;
+      try
+      {
+          bodyOutcome = scriptDelegate.Invoke(xDb, xTx, ctx);
+      }
+      catch (Exception ex)
+      {
+          bodyOutcome = Outcome.Crashed(ex);
+      }
+
+      bool commit = mode == Live
+                  && bodyOutcome is Outcome.Ok
+                  && !ctx.HasFailures;
+
+      if (commit)
+      {
           xTx.Commit();
-      // else: dispose without commit → in-memory edits are discarded
+          xDb.SaveAs(path, xDb.OriginalFileVersion);   // preserve original
+      }
+      // else: dispose without commit → rollback
+
+      report.RecordFile(path, bodyOutcome, ctx.Steps);
   }
-  catch (Exception ex)
-  {
-      // tx auto-disposes on the way out → roll back
-      ctx.Fail(path, ex);
-  }
 
-  if (mode == Live && !ctx.HasFailures)
-      xDb.SaveAs(path, DwgVersion.Current);
+Notes:
 
-The script body sees: `xDb`, `xTx`, `ctx` (an `IBatchContext` for reporting),
-plus a small set of helper extension methods. It does NOT call `tx.Commit()`,
-does NOT call `db.SaveAs()`, does NOT see `Application.DocumentManager`.
+* **File accessibility check** — before the load we probe access. In Live we
+  need write share; in Test `FileShare.ReadWrite` is enough so the user can
+  keep other tools open. If a file is locked by another process the runtime
+  skips it with a clear reason; no exception flooding from `ReadDwgFile`.
 
-Mode toggle: `Test` skips the Commit + SaveAs. The body still mutates the
-in-memory DB, can still run assertions and gather information; nothing
-hits disk. `Live` commits AND saves IFF the body produced no failures.
+* **SaveAs version** — always preserve the file's original DWG version.
+  No user toggle, no asking. `xDb.OriginalFileVersion` is the source of truth.
 
-Boilerplate stays out of the script. The agent writes ~10–50 lines of body.
+* **Cancellation** — checked between files. Inside a script, the body can
+  observe `ctx.Token` if it wants finer-grained cancellation.
 
-(Note: `CloseInput` from earlier drafts is dropped — not used in the
-reference project; only adds confusion.)
+* **Failure rollback** — any exception, any `ctx.Fail()`, any step failure →
+  no commit, even in Live mode. The runtime expects no failures in Live;
+  one failure aborts that file but the loop continues to the next.
+
+* `CloseInput` from earlier drafts is not used (the reference loop doesn't
+  use it; only adds confusion).
 </runtime-shape>
 
+<step-dsl>
+The script body uses a fluent step API that wraps validation, mutation, and
+reporting into a single composable unit. This replaces ad-hoc `ctx.Check(...)`
++ `ctx.Apply(...)` calls.
+
+  ctx.Step("set-layer-transparency")
+     .Require("layer-exists",  () => xDb.HasLayer(TARGET_LAYER))
+     .Require("non-empty",     () => xDb.EntitiesOnLayer(xTx, TARGET_LAYER).Any())
+     .Apply(() =>
+     {
+         int n = 0;
+         foreach (var e in xDb.EntitiesOnLayer(xTx, TARGET_LAYER))
+         {
+             e.UpgradeOpen();
+             e.Transparency = new Transparency((byte)TRANSPARENCY);
+             n++;
+         }
+         return $"{n} entities updated";
+     });
+
+Each `Step` yields one of three structured outcomes:
+
+  Step ::= Passed { name, requirement_results[], applied_summary }
+         | Skipped { name, failing_requirement }
+         | Crashed { name, exception }
+
+Multiple steps can be chained or independent. The runtime aggregates all
+step outcomes per file into `ctx.Steps`, which the runner serialises into
+the per-file `BatchFileResult`.
+
+Requirements are arbitrary predicates supplied by the script. The runtime
+does NOT bake in "has-layer," "non-empty," "color-equals," etc. — those are
+just lambdas the script writes inline. That keeps the runtime tiny and lets
+the agent compose whatever check is appropriate for the task.
+
+If a `Require` predicate throws, the step is recorded as Crashed with the
+exception; the file is failed; no commit. Same for `Apply`.
+
+The script can also declare helper methods or types inline at the top of the
+file — Roslyn scripting supports both (`void Helper(...) { ... }` and
+`record MyDto(...);` as top-level submissions). The runtime does not have to
+ship a bag of extension methods; the agent writes whatever it needs.
+</step-dsl>
+
 <script-body-contract>
-What the agent writes:
+What the agent writes (no line-count limit — script can be as long as the
+task requires; only boilerplate is forbidden):
 
-  // inputs (top of the file, conventionally; users edit these directly)
+  // @flavor: batch
+  // @name: set-layer-transparency-zero
+  // @summary: set transparency to 0 for all entities on layer X-FOOBAR
+
+  // ─── inputs ─────────────────────────────────────────────
   var TARGET_LAYER = "X-FOOBAR";
-  var NEW_TRANSPARENCY = 0;
+  var TRANSPARENCY = 0;
 
-  // verify  — non-fatal assertions about preconditions
-  ctx.Check("layer-exists", xDb.HasLayer(TARGET_LAYER),
-            $"layer {TARGET_LAYER} present");
-  ctx.Check("non-empty",     xDb.EntitiesOnLayer(xTx, TARGET_LAYER).Any(),
-            $"layer {TARGET_LAYER} has at least one entity");
+  // ─── helpers (optional — Roslyn allows inline) ──────────
+  static bool HasMatchingEntity(Database db, Transaction tx, string layer)
+      => db.EntitiesOnLayer(tx, layer).Any();
 
-  if (!ctx.AllChecksPassed) return;   // skip apply for this file
+  // ─── steps ─────────────────────────────────────────────
+  ctx.Step("set-transparency")
+     .Require("layer-exists", () => xDb.HasLayer(TARGET_LAYER))
+     .Require("non-empty",    () => HasMatchingEntity(xDb, xTx, TARGET_LAYER))
+     .Apply(() =>
+     {
+         int n = 0;
+         foreach (var e in xDb.EntitiesOnLayer(xTx, TARGET_LAYER))
+         {
+             e.UpgradeOpen();
+             e.Transparency = new Transparency((byte)TRANSPARENCY);
+             n++;
+         }
+         return $"{n} entities updated";
+     });
 
-  // apply — mutations. ctx.Apply records what was done.
-  int updated = 0;
-  foreach (var ent in xDb.EntitiesOnLayer(xTx, TARGET_LAYER))
-  {
-      ent.UpgradeOpen();
-      ent.Transparency = new Transparency((byte)NEW_TRANSPARENCY);
-      updated++;
-  }
-  ctx.Apply("set-transparency", $"{updated} entities updated");
-
-The runtime expects no failures in Live mode. If `ctx.Check` returns false and
-the script doesn't return, the body itself decides whether to proceed. The
-runtime treats any thrown exception as a hard fail (rollback, report, move on).
-If `ctx.AnyFail()` was called during the body, the runtime treats the file as
-failed and rolls back regardless of mode.
+The agent does NOT write: `new Database(...)`, `db.SaveAs`, `tx.Commit`,
+`tx.Abort`, the outer `using`s, `try/catch`, file iteration. All of that
+lives in the runtime template.
 </script-body-contract>
 
+<cross-file-state>
+Some batches need state passed between files (the user's example: count
+viewframes across the whole drawing set and number them sequentially). The
+runtime provides a strongly-typed shared bag:
+
+  // declare a state type at the top of the script
+  record ViewframeCounter { public int Next = 0; }
+
+  // anywhere in the body
+  var counter = ctx.BatchState<ViewframeCounter>();   // shared across files
+  foreach (var vf in xDb.GetViewframes(xTx))
+  {
+      vf.UpgradeOpen();
+      vf.Number = ++counter.Next;
+  }
+
+`BatchState<T>()` returns the same instance for every file in the batch run.
+First call creates a default-constructed `T`; subsequent calls return that
+same reference. Different `T`s coexist (one Counter, one ErrorList, etc.).
+
+The state is **per batch run**, not persisted across runs. A new Run click
+gives a fresh state pool. This is intentional — persistent state belongs
+elsewhere (in a DTO, written by the script to disk if needed).
+</cross-file-state>
+
 <flavors>
-Three flavors, **strictly separated**:
+Three flavors, **strictly separated** folders + windows:
 
-  @flavor: batch         — side-loaded Database; runs in the BATCH tab only.
-  @flavor: current-doc   — uses Application.DocumentManager.MdiActiveDocument;
-                           runs in the REPL or a future "Current Doc" tab.
+  @flavor: batch         — side-loaded Database; BATCH tab only.
+  @flavor: current-doc   — active document; REPL or future Current-Doc tab.
   @flavor: repl          — palette-only free-form.
-
-Saved scripts live in **separate folders per flavor**:
 
   %APPDATA%\Acd.Mcp\scripts\batch\
   %APPDATA%\Acd.Mcp\scripts\current-doc\
   %APPDATA%\Acd.Mcp\scripts\repl\
 
-The "BATCH scripts" window only sees batch-flavored files. The future
-"Saved scripts" manager in other tabs only sees their own flavor. No
-cross-contamination, no flavor filter dropdown, no mistakes.
+The BATCH palette window manages batch-flavored scripts only. No flavor
+dropdown, no filtering, no mixing.
 
-Validation: at compile time, the runtime injects a `Globals` type matching the
-flavor. Batch-flavor globals expose `Db`, `Tx`, `Ctx`, helper extensions —
-they do NOT expose `Application`, `Document`, `Editor`. A batch script that
-tries to call `Application.DocumentManager.MdiActiveDocument` fails to compile.
+Compile-time enforcement: per-flavor `Globals` types. Batch globals expose
+`xDb`, `xTx`, `ctx`, helper accessors — they do NOT expose `Application`,
+`Document`, `Editor`. A batch script that tries to touch `Application` fails
+to compile, with the agent seeing a clear diagnostic.
 </flavors>
 
 <batch-palette-ui>
-Second tab on the ACD-MCP PaletteSet (alongside REPL). Single concern: batch.
-
-Sections, top to bottom:
+Second tab on the existing ACD-MCP PaletteSet (alongside REPL).
 
   ┌── Files ──────────────────────────────────────────────┐
   │ Folder: [ ........................... ] [Browse]      │
   │ Mask:   [ *.dwg              ]  Recurse [x]           │
   │   → 47 files matched.  [Refresh]                      │
-  ├── Script editor ──────────────────────────────────────┤
-  │ Scripts: [ ▼ set-layer-transparency       ]           │
+  ├── Script editor  (live-shared) ───────────────────────┤
+  │ Scripts: [ ▼ set-layer-transparency-zero        ]     │
   │          [Save] [Save as…] [Delete] [Rename]          │
   │ ┌───────────────────────────────────────────────────┐ │
-  │ │ // inputs                                         │ │
+  │ │ <AvalonEdit, C# highlighting, same theme as REPL> │ │
+  │ │ // @flavor: batch                                 │ │
+  │ │ // @name: set-layer-transparency-zero             │ │
   │ │ var TARGET_LAYER = "X-FOOBAR";                    │ │
-  │ │ var NEW_TRANSPARENCY = 0;                         │ │
-  │ │ ...                                               │ │
-  │ │ <script body goes here — runtime adds the loop>   │ │
+  │ │ ctx.Step("set-transparency").Require(...).Apply(...│ │
   │ └───────────────────────────────────────────────────┘ │
   ├── Execution ──────────────────────────────────────────┤
-  │   [ Test   ●─────○   Live ]      ← slide-switch       │
-  │   [ Run ]   [ Cancel ]   Progress: 12 / 47            │
+  │   ┌───────────────┐                                   │
+  │   │ Test  ◀────▶ Live │   ← hand-rolled toggle        │
+  │   └───────────────┘                                   │
+  │   [ Run ]   [ Cancel ]    Progress: 12 / 47           │
   ├── Per-file results ───────────────────────────────────┤
   │ ✓ apartment-01.dwg   OK     5 entities changed         │
   │ ⚠ apartment-02.dwg   SKIP   layer not present          │
@@ -164,311 +315,461 @@ Sections, top to bottom:
   │   …                                                   │
   └───────────────────────────────────────────────────────┘
 
-Notes from the annotations:
+Behaviour:
 
-* **Slide-switch**, not radio buttons. WPF doesn't ship one; either reuse a
-  `ModernWpf` / `MahApps.Metro` toggle or hand-roll a styled `ToggleButton`.
-  Visual must immediately read as Test-vs-Live (different colour for Live).
-* **Cancel button** only enabled while a batch is running. Must actually
-  interrupt — the runner observes a `CancellationToken` between files (and
-  optionally inside long-running scripts, if the script body checks
-  `ctx.Token`).
-* **UI must not freeze.** The runner runs on a threadpool task; progress and
-  results are dispatched to the WPF thread via the standard
-  `ExecutionLog`-style observable pattern.
-* **Script names are telegram-style** — short, descriptive, no filler. The
-  agent emits the name when it sends a script (e.g. "set-layer-transparency",
-  not "set the transparency value of all entities on a given layer to zero").
-* When the agent sends a new script, it lands **at the top** of the dropdown
-  and is auto-selected so the user reviews it immediately.
-* Future feature (not v1): **"Edit in VSCode"** button on the editor. VSCode
-  needs `.csx` highlighting + a stub `Acd.Mcp.BatchGlobals` reference so
-  IntelliSense knows about `xDb`, `xTx`, `ctx`. Defer; document the goal.
+* **Live-shared editor.** When the agent calls `autocad_batch_propose_script`,
+  the new script text immediately replaces the editor's content (or, if the
+  user has unsaved local edits, prompts: "Replace your changes with the
+  agent's version?" with a "diff" option). The agent can update again at
+  any time; the runtime always executes what is currently in the editor.
+
+* **Slide-switch hand-rolled.** A styled `ToggleButton` (~30 lines XAML),
+  no MahApps/ModernWpf dependency. Distinct colour for Live (red accent)
+  so the state is unambiguous.
+
+* **Cancel** only enabled while a batch is running. Stops the runner via
+  `CancellationToken` between files (and, if the script body checks
+  `ctx.Token`, within a file too).
+
+* **UI must not freeze.** The runner runs on a threadpool task; progress
+  + results dispatch to the WPF thread via the existing observable pattern.
+
+* **Script names are telegram-style** — short, descriptive, no filler.
+  ("set-layer-transparency-zero", not "set the transparency value of all
+  entities on a given layer to zero.")
+
+* **Agent-pushed scripts land at the top of the dropdown and auto-select**
+  so the user sees the latest version immediately.
+
+* **Future feature (not v1):** "Edit in VSCode" button. Requires shipping
+  a stub `Acd.Mcp.BatchGlobals` reference so VSCode IntelliSense resolves
+  `xDb`, `xTx`, `ctx`. Document the goal; defer the work.
 </batch-palette-ui>
 
-<agent-narrow-tool-surface>
-The agent gets one minimal MCP tool to do its part:
+<agent-tool-surface>
+The agent gets exactly two MCP tools for batch authoring:
 
   autocad_batch_propose_script(
-      name: string,           // telegram-style, e.g. "set-layer-transparency"
-      script_body: string,    // batch-flavour body only (no template, no loop)
-      input_summary: string?  // optional human-readable summary for log line
+      name: string,                    // telegram-style, e.g. "set-layer-transparency-zero"
+      script_body: string,             // batch-flavour body only — no template, no loop
+      input_summary: string?           // optional one-line summary
   ) -> { ok: true, saved_as: string }
+      Annotations: ReadOnly=false (writes a file), Destructive=false,
+                   Idempotent=true, OpenWorld=true.
 
-Behaviour: writes the script to `%APPDATA%\Acd.Mcp\scripts\batch\<name>.csx`,
-inserts at top of the BATCH palette's dropdown, auto-selects it. **Returns
-immediately.** Does NOT execute. Does NOT load drawings. Does NOT enumerate
-files. The agent never sees the file list, never sees test results unless the
-user actively sends them back (see feedback-loop).
+      Writes the script to %APPDATA%\Acd.Mcp\scripts\batch\<name>.csx,
+      inserts at top of the BATCH palette's dropdown, auto-selects it.
+      If a script with the same name exists, overwrites it (idempotent).
 
-That's the *whole* surface for batch authoring. No `_test`, no `_apply`, no
-`_list_files`. Adding more tools would mean the agent thinking it can drive
-execution — which it can't, by design.
+  autocad_batch_run_test(
+      name: string                     // name of a script already proposed
+  ) -> { run_id: string,
+         results_resource: "acd-mcp://batch-runs/<run_id>" }
+      Annotations: ReadOnly=true (test mode never mutates files; rollback
+                                   is guaranteed by the runtime),
+                   Destructive=false, Idempotent=false, OpenWorld=true.
 
-For everything ELSE (querying the active drawing, exploring entities), the
-agent uses the existing `autocad_execute_csharp` REPL path — same tool as
-today. No new "list_entities" tool is added; the agent writes a one-liner that
-returns the entities it wants, and the result streams back through the same
-channel. The whole point is keeping the tool surface abstract and generic.
-</agent-narrow-tool-surface>
+      Triggers a test run of the named script against the currently-selected
+      folder + mask in the BATCH palette. Returns immediately with a run-id
+      and an MCP resource URI the agent reads when it wants the results.
+      The agent can call this in a loop while iterating on a script.
+
+      **There is no autocad_batch_run_live tool.** Live execution requires
+      the user to flip the slide-switch to Live and click Run, in person.
+      The agent literally cannot trigger Live mode through the bridge.
+
+Querying drawings, listing entities, exploring layers, etc., all flow
+through the existing `autocad_execute_csharp` REPL tool. No new query tools.
+That tool is intentionally generic; specialised tools would only multiply
+the surface for the agent to learn.
+
+The bridge auto-discovers tools via `WithToolsFromAssembly()`. Adding
+these two is a matter of two new `[McpServerToolType]` classes; the bridge
+core does not change.
+</agent-tool-surface>
 
 <feedback-loop>
-Open design problem. The user explicitly flagged this needs more thought:
+Per the user's annotations, the chosen design is **MCP resources, on-demand
+read** — Option A from v2, reinforced twice.
 
-> User cannot send a signal from MCP to agent? The idea is that user controls
-> execution. So if we want results back to agent, we need actively to signal
-> agent to read feedback.
+Resources exposed by the bridge:
 
-MCP servers can expose **resources** (read-on-demand) and **notifications**
-(push). The shape that fits this design:
+  acd-mcp://batch-runs/recent
+      Latest N completed BATCH runs (id, when, summary). Newest first.
 
-  Option A — Polling. The bridge exposes an MCP resource
-  `acd-mcp://last-batch-result` that returns the most-recent BATCH result
-  JSON. The agent reads it when the user says "check the results".
-  Simple, no push, agent-on-demand. Fits the "user controls execution" rule.
+  acd-mcp://batch-runs/<run_id>
+      Full per-file result of a specific run. Includes step-level outcomes
+      (which Requires passed, which Apply summaries ran, which exceptions
+      were caught), elapsed timings, and the cancellation status.
 
-  Option B — Explicit user-pushed feedback. A "Send to agent" button in the
-  BATCH palette that writes the last result to a known file the bridge then
-  surfaces as an MCP resource. Identical mechanics to A but UX-explicit:
-  the user opts in per-result.
+  acd-mcp://batch-runs/last
+      Convenience alias for the most-recent run.
 
-  Option C — Server-initiated notifications. The MCP SDK supports
-  `notifications/resources/updated`. The bridge fires one when the BATCH UI
-  finishes a run; supporting clients (Claude Desktop) refresh the resource.
-  Richest UX; needs investigation of which clients actually wire up the
-  refresh signal.
+When the agent wants feedback after `autocad_batch_run_test` returned a
+run-id, it reads `acd-mcp://batch-runs/<run_id>` (or `acd-mcp://batch-runs/last`).
+Polling is fine; runs are bounded.
 
-**Recommendation for v1: Option B**. Explicit user-driven feedback keeps the
-"user owns execution" invariant clean. The button is the user's consent to
-share. Implement A as a fallback so the agent can always poll on user
-request. Skip C until we know which clients honour the update notification.
+Storage:
+  %LOCALAPPDATA%\Acd.Mcp\batch-runs\<yyyy-MM-dd_HH-mm-ss>_<run_id>.json
 
-Agent's role in feedback: advisory only. Reads the BATCH result, summarises
-("3 files succeeded, 2 failed with eLockViolation — looks safe to flip to Live
-once those two are fixed"). The agent **cannot** execute Live mode. There is
-no `autocad_batch_run_live` tool, full stop.
+The history file is durable — across plugin reloads, AutoCAD restarts, and
+plugin updates. The bridge enumerates the directory to back the `recent`
+resource. The agent can read older runs by id.
+
+This also gives the user audit value: every batch run is a JSON file with
+the exact script body, file list, mode, and per-file outcomes — a paper
+trail without extra work.
+
+Notifications (Option C from v2) are dropped for v1. MCP client support
+is uneven; polling is reliable.
 </feedback-loop>
 
 <dto-serialization-for-streaming>
-When the agent asks the live REPL "list all circles", `autocad_execute_csharp`
-needs to return readable JSON, not the 200-property dump of every Entity.
+The REPL's `autocad_execute_csharp` returns garbage by default when an
+AutoCAD entity is the last expression (hundreds of properties, recursive
+graphs). DTOs solve this.
 
 Mechanism:
 
-  - `%APPDATA%\Acd.Mcp\dto\*.csx` — a folder of DTO definition scripts. Each
-    script registers one or more `JsonConverter<T>` for an AutoCAD entity
-    type. Example file `circle.csx`:
+  %APPDATA%\Acd.Mcp\dto\*.csx — hot-reloadable .csx scripts. Each registers
+                                JsonConverter<T> for one entity type. Loaded
+                                via Roslyn on plugin startup AND on
+                                missing-type detection (see below).
 
-        // @dto: Autodesk.AutoCAD.DatabaseServices.Circle
-        Acad.RegisterDto<Circle>(c => new {
-            center = c.Center,
-            radius = c.Radius,
-            layer  = c.Layer,
-            color  = c.Color.ColorIndex,
-        });
+  Example  circle.csx:
+      // @dto: Autodesk.AutoCAD.DatabaseServices.Circle
+      Acad.RegisterDto<Circle>(c => new {
+          center = c.Center,
+          radius = c.Radius,
+          layer  = c.Layer,
+          color  = c.Color.ColorIndex,
+      });
 
-  - On plugin load: scan the folder, compile each script via Roslyn (same
-    machinery the REPL uses), register the resulting converters into a
-    shared `JsonSerializerOptions` used by the REPL when an `ExecuteResult`
-    contains a domain object that needs structured serialisation.
+**No reload button.** The serializer checks at invocation: if an entity
+needs serialising and no converter is registered for its runtime type, it
+triggers a folder rescan + recompile, then retries. If still missing, falls
+back to a marker `{ "$unsupported": "TypeName" }` so the agent sees the gap
+clearly and can write a DTO.
 
-  - Palette button (future tab "DTOs"): "Reload DTOs" — recompiles all
-    .csx files. Same lifecycle as live REPL — no plugin rebuild required.
+Starter set, populated by the installer at first run, plus any user-added
+files later:
 
-The user phrased this as "we are running scripts already, can we just have
-DTOs as scripts that get hot-reloaded?". Yes; this is that.
+  Built-in primitives:
+      DBPoint, Point2d, Point3d, Vector3d, Extents3d, ObjectId
 
-Add a simple template / example DTO so users see the shape. Ship a starter
-set (Circle, Line, Polyline, Text, BlockReference) in the project's
-deployed `dto/` folder; copied to `%APPDATA%` on first run if missing.
+  Text:
+      DBText, MText
+
+  Entities:
+      Circle, Line, Arc, Polyline, Polyline3d, Hatch, BlockReference
+
+The BlockReference DTO and any other entity DTOs go through a separate
+**data-provider abstraction** (next section), not direct property reads.
+
+A dedicated skill `acd-mcp-add-dto` ships with the plugin and teaches the
+agent:
+  - where the DTO folder lives,
+  - the @dto header format,
+  - the registration shape,
+  - the requirement to verify type metadata via the AutoCAD API docs
+    (Context7 or other authoritative sources — **never guess**, capitalised
+    rule from the user: GUESSING IS FORBIDDEN, ALWAYS VERIFY),
+  - the "write a probe with execute_csharp first to confirm the property
+    exists on the live type" workflow.
 </dto-serialization-for-streaming>
 
-<module-layout>
-Strictly layered. Each module deep, no concern leaks across boundaries.
+<entity-data-provider-abstraction>
+AutoCAD entities carry user-defined data through three different mechanisms:
 
-Project: `Acd.Mcp.Batch` (new) — pure, AutoCAD-free runtime + abstractions.
-                                  References `Acd.Mcp` only for `ExecuteResult`-style DTOs.
+  - **Block Attributes**       — for `BlockReference`s with attached `AttributeReference`s.
+  - **PropertySets** (AECC)    — for any entity. Used by AutoCAD Civil / Map / MEP.
+  - **XData**                  — extended data, key-value-ish, on any entity.
 
-  IBatchSession        — wraps a single drawing.
-    Real impl (`AcadBatchSession`, in Acd.Mcp): owns `Database` + `Transaction`.
-    Test impl (`FakeBatchSession`, in tests):   in-memory entity dict + flags.
+A user may store the same logical metadata in any of these depending on the
+domain. DTOs that just read `block.AttributeCollection` miss PropertySet
+users entirely.
 
-  IBatchContext        — what the script body sees as `ctx`.
-    Check(name, ok, msg), Apply(name, msg), Fail(reason), Token, AllChecksPassed.
+The plugin defines an abstract data-provider interface:
 
-  BatchScriptHost      — given a body string + flavour-Globals, compiles it via
-                         Roslyn into a delegate. Caches the compiled delegate
-                         by body hash. AutoCAD-free; takes ISession as input.
+  public interface IEntityDataProvider
+  {
+      // Returns Maybe<string> for "is this key present, and if so what's the value?"
+      Outcome<string> TryRead(Entity ent, Transaction tx, string key);
 
-  BatchRunner          — takes IEnumerable<string> file paths, an IDrawingHost
-                         (factory for IBatchSession from path), a compiled script
-                         delegate, a Mode (Test/Live), a CancellationToken, an
-                         IProgress<BatchFileResult>. Loops, reports, never
-                         touches AutoCAD directly.
+      // For enumeration / preview cases.
+      IReadOnlyDictionary<string, string> ReadAll(Entity ent, Transaction tx);
+  }
 
-  IDrawingHost         — Open(path) -> IBatchSession. The AutoCAD impl uses
-                         `new Database(false, true) + ReadDwgFile`. The fake
-                         impl returns a `FakeBatchSession` from a dict.
+Concrete providers ship in v1:
+  - BlockAttributeProvider     — reads `BlockReference.AttributeCollection`.
+  - PropertySetProvider        — reads via the AEC PropertyData APIs.
+  - XDataProvider              — interface present, implementation stubbed
+                                  (TODO marked, throws NotSupported). v1 ships
+                                  with the interface so consumers can rely on
+                                  it; the implementation lands when needed.
 
-Project: `Acd.Mcp` — adds the AutoCAD-backed `AcadDrawingHost`, the BATCH
-                     palette UI, and the script-folder watcher.
+A `CompositeDataProvider` aggregates all three so DTOs can ask "what does
+the user know as 'PartNumber' on this entity?" without caring where it's
+stored.
 
-Project: `Acd.Mcp.Batch.Tests` (new) — pure unit tests, NO AutoCAD reference.
-                                       Targets `net8.0` (not net8.0-windows).
-
-The Tests project is the proof of testability: if a unit test of `BatchRunner`
-requires AutoCAD, the abstraction is wrong. Reject the design and re-layer.
-
-Concrete things the tests must cover (red first, green after):
-
-  - Loop iterates all files in input order.
-  - Mode=Test never calls IBatchSession.Commit; Mode=Live calls it on success.
-  - Any script exception → tx.Abort (semantic, on the fake) + result.Failed = true.
-  - ctx.Fail() → no commit even in Live mode.
-  - Cancellation token tripped between files → loop exits, returns partial results.
-  - Cancellation token tripped during a script body → that file's result is "cancelled", loop exits.
-  - Per-file results are reported via IProgress in order, exactly once per file.
-  - Compile errors in the script body surface before the loop starts (no file is touched).
-  - Compile errors include line/column relative to the user-visible body, not the wrapped template.
-
-The autocad-backed AcadDrawingHost has a separate integration test (manual
-or skipped by default in CI), because it does need AutoCAD. Unit tests cover
-the runner exhaustively without it.
-</module-layout>
+DTO scripts use the composite by default. Advanced users can register a
+DTO that picks a specific provider when they know the data only lives in
+one place.
+</entity-data-provider-abstraction>
 
 <naming-and-flavor-files>
-Saved scripts on disk use a header comment for the flavor and inputs:
+Saved scripts on disk use a header for flavor + metadata:
 
   // @flavor: batch
-  // @name: set-layer-transparency
+  // @name: set-layer-transparency-zero
   // @summary: set transparency to N for all entities on layer L
   // ─── inputs ─────────────────────────────────────────────
   var TARGET_LAYER = "X-FOOBAR";
   var TRANSPARENCY = 0;
-  // ─── body ───────────────────────────────────────────────
-  ctx.Check("layer-exists", xDb.HasLayer(TARGET_LAYER), ...);
-  ...
+  // ─── steps ──────────────────────────────────────────────
+  ctx.Step(...)...
 
-The runtime parses the header, validates `@flavor`, displays `@name`, and
-remembers `@summary` for the log line. If a flavor header is missing, the file
-defaults to its containing folder's flavor.
+Missing `@flavor` defaults to the containing folder's flavor. Missing
+`@name` defaults to the file name without extension. Missing `@summary`
+is just blank.
 </naming-and-flavor-files>
 
-<resolved-decisions>
-From the revdiff round:
+<module-layout>
+Strictly layered. Each module deep, no concern leaks across boundaries.
 
-* No SequenceComposer. LLM replaces it.
-* Slide-switch for Test/Live, not radios.
-* Cancel button required, only active while running. UI must not freeze.
-* Test mode = skip `tx.Commit()` only. Body still runs end-to-end.
-* Runtime owns DB load + tx + try/catch + save. Body owns mutations only.
-* Batch scripts live in their own folder, in their own palette tab, with
-  their own manager window. No mixing with other flavors.
-* Agent's tool surface is the absolute minimum: `autocad_batch_propose_script`.
-  Everything else stays in the user's hands.
-* Script delivered to top of the dropdown, auto-selected.
-* DTOs are scripts in a folder. Hot-reloadable. No special MCP tool.
-* No `autocad_list_entities`. Reuse `autocad_execute_csharp` + DTOs.
-* Parallel batch processing: dropped. AutoCAD is single-threaded; the user
-  is sceptical it can work. YAGNI for v1; revisit if a real bottleneck shows up.
-* `CloseInput` not used in the reference loop; drop from runtime.
-* Saved-script catalogue: local folder for v1. Shared folder support is a
-  later feature.
+Project: `Acd.Mcp.Batch` (new) — pure runtime + abstractions, AutoCAD-free.
+                                  References `Acd.Mcp` (root namespace) only
+                                  for shared records like `ExecuteResult` /
+                                  `Outcome<T>`.
+
+  Outcome<T>           — discriminated union: Ok(T) | Skip(reason) | Failed(error)
+                         + a non-generic Outcome for steps that have no payload.
+
+  IBatchSession        — wraps a single drawing.
+    AcadBatchSession (in Acd.Mcp): owns Database + Transaction.
+    FakeBatchSession (tests):       in-memory entity dict.
+
+  IBatchContext        — what the script body sees as `ctx`.
+                         Step(name) returns IStepBuilder. BatchState<T>().
+                         Token (CancellationToken).
+
+  IStepBuilder         — .Require(name, predicate).Apply(action). Records
+                         StepOutcome onto context when committed.
+
+  StepOutcome          — Passed { name, requirements[], summary }
+                       | Skipped { name, failing_requirement }
+                       | Crashed { name, exception }.
+
+  BatchScriptHost      — compiles a body string into a delegate.
+                         Caches by SHA256(body). AutoCAD-free; takes an
+                         IBatchSession factory at invocation.
+
+  BatchRunner          — takes IDrawingHost, compiled script, Mode,
+                         CancellationToken, IProgress<BatchFileResult>.
+                         Iterates files, calls into IBatchSession, records
+                         outcomes, never touches AutoCAD directly.
+
+  IDrawingHost         — Open(path) -> IBatchSession.
+                         Real: AcadDrawingHost in Acd.Mcp.
+                         Fake: in-memory dict in tests.
+
+  IFileAccessProbe     — TryOpen(path, mode) -> Outcome<FileLease> to detect
+                         locked files before attempting Read/Write.
+
+  BatchRunHistory      — writes per-run JSON to
+                         %LOCALAPPDATA%\Acd.Mcp\batch-runs\; enumerates for
+                         the MCP resource. Pure file I/O; no AutoCAD.
+
+Project: `Acd.Mcp` (existing) — adds AutoCAD-backed AcadDrawingHost,
+                                AcadBatchSession, the BATCH palette UI, the
+                                script-folder watcher, the data-provider
+                                concretes.
+
+Project: `Acd.Mcp.Batch.Tests` (new) — `net8.0` (NOT `net8.0-windows`).
+                                       NO acmgd / accoremgd / acdbmgd reference.
+                                       Tests use FakeBatchSession + mock
+                                       Database-shaped types (the LLM
+                                       implements whatever mocks are needed —
+                                       no library dependency).
+
+Bridge changes: **none structural.** The bridge auto-discovers tools via
+`WithToolsFromAssembly()`. Adding `autocad_batch_propose_script` and
+`autocad_batch_run_test` is two new `[McpServerToolType]` classes in
+`Acd.Mcp.Bridge\Tools\`. Adding the MCP resources for batch runs is
+attribute-based; the bridge core code stays as-is.
+
+The Tests project is the proof of testability. If a unit test of
+`BatchRunner` needs AutoCAD, the abstraction is wrong; re-layer.
+
+Test coverage (red first, green after, per the TDD discipline):
+
+  - Loop iterates all files in input order.
+  - Mode=Test never calls IBatchSession.Commit; Mode=Live calls it on success.
+  - File-locked path → Skip with the lock reason; never opens the DB.
+  - Any script exception → no commit; result.Failed = true; loop continues.
+  - ctx.Step.Require(false) → step recorded as Skipped; no Apply ran.
+  - ctx.Step Apply throws → step recorded as Crashed; no commit even in Live.
+  - Cross-file state survives across the loop and is the same instance.
+  - Cancellation between files → loop exits early; results report partial.
+  - Cancellation inside script (script checks ctx.Token) → that file's
+    result is Cancelled; loop exits.
+  - Per-file results report via IProgress in order, exactly once per file.
+  - Compile errors in the body surface BEFORE the loop starts (no file touched).
+  - Compile error line/column maps to the body, not the wrapped template.
+  - BatchRunHistory writes one JSON per run; enumerates newest-first.
+  - Outcome<T> discriminated union pattern-matches exhaustively.
+  - IEntityDataProvider composite tries each provider in registration order
+    and returns the first hit.
+</module-layout>
+
+<resolved-decisions>
+* Two execution modes coexist: autonomous-agent and user-driven. Live is
+  always a user click.
+* Script editor is a live-shared slot. Agent updates → editor reflects.
+* `TryApply` is renamed to a fluent `Step / Require / Apply` chain.
+* Cross-file state via `ctx.BatchState<T>()`. Per-run lifetime.
+* Real `Outcome<T>` / discriminated union pattern, not a `Result+enum` bag.
+* No line-count guidance to the agent. Boilerplate forbidden, body free-form.
+* File accessibility check before load. Live: write share. Test: ReadWrite share.
+* SaveAs always preserves the file's original DWG version. No setting.
+* `CloseInput` dropped (reference doesn't use it).
+* Parallel batches dropped (AutoCAD single-threaded; user sceptical).
+* Helpers / mini-types declared inline in the script via Roslyn submission
+  support. No baked-in extension method library.
+* Slide-switch: hand-rolled `ToggleButton` style, no extra NuGet.
+* Distribution: Claude plugin with `/plugin install` workflow. Plugin bundles
+  the MCP server, the skills, and the AutoCAD `.bundle`.
+* DTOs hot-reload implicitly on missing-type detection. No reload button.
+* DTO starter set: DBPoint, Point2d, Point3d, Vector3d, Extents3d, ObjectId,
+  DBText, MText, Circle, Line, Arc, Polyline, Polyline3d, Hatch, BlockReference.
+* Skill `acd-mcp-add-dto` ships with the plugin, embeds the verify-don't-guess
+  rule.
+* `IEntityDataProvider` abstraction covers Block Attributes + PropertySets
+  in v1, with XData interface stubbed.
+* Saved-script catalogue: local folders only for v1. Shared-folder support
+  is a later feature.
+* Feedback loop: MCP resource `acd-mcp://batch-runs/...` (polling). Storage
+  in `%LOCALAPPDATA%\Acd.Mcp\batch-runs\`.
+* Tools the agent gets: exactly two. `autocad_batch_propose_script` (writes
+  + auto-selects) and `autocad_batch_run_test` (test runs only; live is the
+  user's click).
+* Bridge structure unchanged — tools auto-discovered.
+* Mocking AutoCAD types in tests is fine and expected. LLMs are good at it.
 </resolved-decisions>
 
 <open-decisions>
-Things still to resolve before implementation. The subagent should ask before
-guessing:
+Things the implementing agent should ask before guessing.
 
-1. Slide-switch implementation: ModernWpf, MahApps.Metro, or hand-rolled?
-   ModernWpf is lighter; MahApps has a richer style set; hand-roll keeps the
-   plugin's dependency surface minimal. Default recommendation: hand-roll
-   one `ToggleButton` style — ~30 lines of XAML, no extra NuGet.
+1. Exact Claude-plugin packaging format. The user described the goals
+   (single `/plugin install`, bundle to `%APPDATA%\Autodesk\ApplicationPlugins\`,
+   skills under `.claude-plugin/skills/`). The agent must read the current
+   Claude plugin manifest spec (`plugin.json` schema, install hooks, MCP
+   server registration) and confirm the layout matches before writing the
+   manifest. If anything is fuzzy, ask the user, not the spec author.
 
-2. Compile-cache key: hash the script body? Hash + Mode? Hash + Mode + flavor?
-   Probably (body hash) — Mode and flavor are runtime-passed, body is the
-   compilation input. Confirm with a test.
+2. Discriminated-union representation. `Outcome<T>` could be a sealed
+   abstract record with derived records (idiomatic C#, zero deps), or via
+   OneOf NuGet, or via LanguageExt. Recommend hand-rolled records unless
+   there's a strong reason otherwise. Decide and document.
 
-3. Feedback-loop final shape (Option A/B/C above). Recommendation: B for v1,
-   with A as a fallback. Decide before writing the bridge changes.
+3. How does the BATCH palette's "the editor has unsaved local edits and the
+   agent pushed a new version" race resolve in the UI? Options:
+   (a) prompt with "replace / keep / diff"; (b) always replace + show an
+   "undo" toast; (c) refuse the agent push and surface an MCP error.
+   v1 recommendation: (a). Confirm.
 
-4. Where does the runtime put the "result of the last batch" so the bridge
-   can expose it as an MCP resource? Probably `%LOCALAPPDATA%\Acd.Mcp\last-batch.json`.
-   Atomic write; bridge reads on demand. Confirm.
-
-5. SaveAs target version: should the runtime preserve the file's existing DWG
-   version or always save current? Reference loop saves current; that may be
-   undesirable for a mixed shop. Make it a per-batch setting in the palette
-   with default = "preserve original version" if we can read it cheaply.
+4. PropertySets API requires the AEC managed assemblies. Does the plugin
+   ship + depend on these unconditionally, or detect-and-disable when they
+   are missing (pure AutoCAD without Civil 3D / MEP)? Recommend
+   detect-and-disable so vanilla AutoCAD installs still work.
 </open-decisions>
 
 <implementation-playbook>
-This section is the brief for the autonomous subagent (Opus 4.7 high) that
-will implement the feature. **Use it as the agent's prompt; read the rest of
-this doc as context.**
+Brief for the autonomous subagent. The agent must be Opus 4.7 high. The
+agent works in an isolated worktree off this repo's master branch. Use this
+section as the agent's prompt; the rest of the doc is context.
 
-Acceptance criteria (the agent is done when all are true):
+Acceptance criteria:
 
-  1. Solution builds clean: `dotnet build Acd.Mcp.sln -c Debug -p:Platform=x64`.
-  2. New project `Acd.Mcp.Batch` builds against `net8.0` (no AutoCAD ref).
-  3. New project `Acd.Mcp.Batch.Tests` builds against `net8.0` and runs green
-     with `dotnet test`. Tests cover every bullet in <module-layout>.
-  4. AutoCAD-backed `AcadDrawingHost` lives in `Acd.Mcp` proper and is exercised
-     manually (no CI requirement).
-  5. New `autocad_batch_propose_script` MCP tool on `Acd.Mcp.Bridge` with
-     annotations: readOnly=false (it writes a script file), destructive=false
-     (it does not execute), idempotent=true (re-sending same name overwrites
-     deterministically), openWorld=true.
-  6. BATCH tab added to the existing PaletteSet. Layout per <batch-palette-ui>.
-     Slide-switch present and functional. Cancel button gates correctly.
+  1. `dotnet build Acd.Mcp.sln -c Debug -p:Platform=x64` is clean.
+  2. New `Acd.Mcp.Batch` project builds against `net8.0` with no AutoCAD ref.
+  3. New `Acd.Mcp.Batch.Tests` project builds against `net8.0`, all tests
+     green via `dotnet test`, covers every bullet in <module-layout>.
+  4. AutoCAD-backed `AcadDrawingHost` + `AcadBatchSession` live in
+     `Acd.Mcp` proper. Manual smoke test only; not in CI.
+  5. Two new `[McpServerToolType]` classes added: `BatchProposeScriptTool`
+     and `BatchRunTestTool`. Annotations as in <agent-tool-surface>.
+  6. MCP resources for `acd-mcp://batch-runs/...` implemented per
+     <feedback-loop>. Run history written to `%LOCALAPPDATA%\Acd.Mcp\batch-runs\`.
+  7. BATCH tab added to the existing PaletteSet. Layout per <batch-palette-ui>.
+     Hand-rolled slide-switch present. Cancel button gates correctly.
      UI does not freeze during a run.
-  7. Script folder watcher reloads the dropdown when files change on disk.
-  8. Telegram-style new-script-from-agent flow: lands at top, auto-selected.
-  9. DTO loader scans `%APPDATA%\Acd.Mcp\dto\*.csx` on startup, registers
-     converters into a shared `JsonSerializerOptions`. Hot-reload button works.
- 10. Documentation: a short usage note added to `README.md`. Architecture
-     decisions added to `docs/design/architecture.md` (or a new `batch-architecture.md`).
+  8. Live-shared script editor: agent pushes via `autocad_batch_propose_script`
+     → editor updates (with the unsaved-edits resolution decided in
+     <open-decisions> item 3).
+  9. Script folder watcher reloads the dropdown when files change on disk.
+ 10. DTO loader scans `%APPDATA%\Acd.Mcp\dto\*.csx` on startup and on
+     missing-type detection. Starter set per <dto-serialization-for-streaming>.
+ 11. `IEntityDataProvider` abstraction implemented with the three concretes
+     per <entity-data-provider-abstraction> (XData stubbed).
+ 12. Claude plugin packaging: `plugin.json`, two skills (`acd-batch`,
+     `acd-mcp-add-dto`), bundled MCP server, bundled AutoCAD `.bundle`.
+     Install script copies the bundle to
+     `%APPDATA%\Autodesk\ApplicationPlugins\ACD-MCP.bundle\`.
+ 13. Documentation: a short usage note in `README.md`. A new
+     `docs/design/batch-architecture.md` capturing the implementation
+     decisions (Outcome representation, mocking strategy, etc.) so future
+     contributors don't have to spelunk the code.
 
 Working method:
 
-  * **TDD red-green**, no exceptions. For every public method in
-    `Acd.Mcp.Batch`, write the failing test before the implementation.
-    Commit the red test, then commit the green implementation. Reviewer reads
-    git log to verify the discipline.
-  * Work in an **isolated worktree** off this repo's master.
-  * **No AutoCAD reference in the test project.** If a test "needs AutoCAD,"
-    the abstraction is wrong — re-layer until it doesn't.
-  * Keep modules **deep**: small interfaces, hidden implementations. The
-    `BatchRunner.RunAsync` signature must reveal *nothing* about Roslyn,
-    nothing about file I/O, nothing about WPF.
-  * **No spaghetti**: if a class touches more than one of {UI, threading,
-    AutoCAD APIs, Roslyn, file system}, split it.
-  * Ask before guessing on the items in <open-decisions>. The user said
-    "very clever agent" — that means it knows what it doesn't know.
-  * **Read the reference projects first** before writing any code. Both
-    files listed in <reference-projects> are required prerequisites.
-  * **Do not start until the user confirms** the open decisions and the
-    feedback-loop choice. Print the open questions, wait, then proceed.
-  * Open a PR back to master when the acceptance criteria are met.
-    Squash-merge candidate; many small commits are fine on the branch.
+  * **TDD red-green.** For every public method in `Acd.Mcp.Batch`, write
+    the failing test first. Commit the red test (its commit message says
+    so). Then commit the green implementation. The reviewer reads `git log`
+    to confirm the discipline.
+  * **Isolated worktree.** Branch named `feat/acd-batch`. No work on master.
+  * **No AutoCAD reference in the test project.** If a unit test
+    needs AutoCAD, re-layer until it doesn't. Mock whatever Database /
+    Transaction / Entity API the test exercises — the LLM is good at it.
+  * **Deep modules.** `BatchRunner.RunAsync` reveals nothing about Roslyn,
+    nothing about file I/O, nothing about WPF. Each public type does one
+    job.
+  * **Real patterns, not rookie code.** The reference batch loop is shape
+    only. Use `Outcome<T>` discriminated unions, fluent step builders,
+    `IProgress<T>` for streaming, proper async; not bare enums and ad-hoc
+    `AbortGracefully` calls.
+  * **Never guess.** Verify AutoCAD API shapes via authoritative sources
+    (the SDK headers, Context7, AutoCAD documentation). If uncertain about
+    a property's existence, write a probe via `execute_csharp` against a
+    live drawing to confirm. The user is emphatic: **GUESSING IS FORBIDDEN.**
+  * **Read the reference projects first.** Both files in <reference-projects>
+    are prerequisites. Read them, understand them, then design.
+  * **Ask before guessing on <open-decisions>.** Print the open questions,
+    wait for the user, then proceed.
+  * **One PR.** Open a PR back to master when all acceptance criteria pass.
+    Many small commits on the branch are fine; squash-merge candidate.
 
 What the agent must NOT do:
 
-  * Do not regress the existing MCP tool (`autocad_execute_csharp`) or the
-    existing REPL palette. They are independent and stay independent.
-  * Do not add a `list_entities`-style tool. The whole point of this spec is
-    that the existing REPL covers querying.
-  * Do not let the agent's tool surface drift. Exactly one new tool:
-    `autocad_batch_propose_script`. Anything else needs the user to approve.
-  * Do not allow Live execution to be triggered from the bridge. The bridge
-    has no Run-Live verb. Period.
-  * Do not commit AutoCAD-dependent code into `Acd.Mcp.Batch`. That project's
-    csproj must not reference any `acmgd`/`accoremgd`/`acdbmgd` assembly.
+  * Do not regress `autocad_execute_csharp` or the existing REPL palette.
+  * Do not add any `list_entities`-style query tool. The REPL covers it.
+  * Do not let the agent's tool surface drift. Exactly two new tools, named
+    as in <agent-tool-surface>. Adding another requires user approval.
+  * Do not allow Live execution from the bridge in any form. There is no
+    `autocad_batch_run_live`. The Live click is the user's, in person.
+  * Do not commit AutoCAD-dependent code into `Acd.Mcp.Batch`. Its csproj
+    must reference zero `acmgd` / `accoremgd` / `acdbmgd` assemblies.
+  * Do not bake a huge "helper extension methods" library into the runtime.
+    Roslyn scripting lets the agent declare inline helpers; let it.
+  * Do not invent slide-switch UX; hand-roll a `ToggleButton` style with
+    a clear Live = red accent.
+  * Do not write line-count guidance into the agent's skill ("keep scripts
+    under N lines"). The user explicitly forbade it.
 
-Output contract back to the user:
+Output contract:
 
-  * A passing CI run on the worktree branch.
-  * A PR with a clear summary referencing this spec by path.
-  * A short "what's testable, what isn't" note in the PR description so the
-    user knows what to exercise manually in AutoCAD.
+  * A green CI run on `feat/acd-batch`.
+  * A PR with a clear summary referencing this spec.
+  * A "what's tested vs what to exercise manually" note in the PR
+    description so the user knows what to smoke-test in AutoCAD.
 </implementation-playbook>
