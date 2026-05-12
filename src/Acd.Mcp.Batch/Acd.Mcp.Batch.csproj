@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0, NOT net8.0-windows. This project must stay AutoCAD-free and
+         WPF-free so it can be unit-tested without an AutoCAD process. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Acd.Mcp.Batch</RootNamespace>
+    <AssemblyName>Acd.Mcp.Batch</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Roslyn scripting for compile-and-cache of script bodies into a delegate.
+         The runtime is AutoCAD-free; the compiled delegate is parameterised by
+         IBatchContext, so its globals contain no AutoCAD types. AutoCAD types
+         are only injected via the IBatchSession the host provides. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
+  </ItemGroup>
+
+</Project>

@@ -33,6 +33,26 @@ namespace Acd.Mcp.Bridge
                 ?? throw new IOException("Server returned an empty execute result.");
         }
 
+        // Generic typed call for non-execute methods (batch.*, ping, etc.).
+        // Tools / resources use this to invoke the plugin's RPC surface and
+        // get a typed result back.
+        public async Task<T> CallAsync<T>(string method, object? @params, CancellationToken ct = default)
+        {
+            var response = await SendAsync(method, @params, ct).ConfigureAwait(false);
+            return DecodeResult<T>(response)
+                ?? throw new IOException($"Server returned an empty result for '{method}'.");
+        }
+
+        // Raw call — returns the JsonElement result for callers that want
+        // to format their own response (MCP resources returning JSON text).
+        public async Task<JsonElement> CallRawAsync(string method, object? @params, CancellationToken ct = default)
+        {
+            var response = await SendAsync(method, @params, ct).ConfigureAwait(false);
+            if (response.Error is { } err) throw new AcadRpcException(err.Code, err.Message);
+            if (response.Result is JsonElement el) return el;
+            throw new IOException("Unexpected response shape (no result, no error).");
+        }
+
         private async Task<JsonRpcResponse> SendAsync(string method, object? @params, CancellationToken ct)
         {
             int pid = AutoCadDiscovery.ResolvePid(_explicitPid);

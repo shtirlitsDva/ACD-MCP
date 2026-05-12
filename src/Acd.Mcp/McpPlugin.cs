@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Acd.Mcp.Batch.Runtime;
 using Acd.Mcp.Data;
 using Acd.Mcp.Pipe;
 using Acd.Mcp.Scripting;
@@ -31,7 +32,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v9-dto";
+        private const string Version = "v10-dto-batch";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -41,6 +42,8 @@ namespace Acd.Mcp
         private static PipeListener? _listener;
         private static ReplPaletteSet? _palette;
         private static SynchronizationContext? _mainSync;
+        private static BatchExecutor? _batchExecutor;
+        private static BatchRpcHandler? _batchRpc;
 
         // DTO graph. Built once in TryEnsureCore; the same registry feeds both
         // the JsonSerializerOptions (passed to ScriptSession) and the loader
@@ -84,6 +87,10 @@ namespace Acd.Mcp
             SafeBoundary.Run("McpPlugin.Terminate/listener.Dispose", () => _listener?.Dispose());
             _listener = null;
 
+            SafeBoundary.Run("McpPlugin.Terminate/batchExecutor.Dispose", () => _batchExecutor?.Dispose());
+            _batchExecutor = null;
+            _batchRpc = null;
+
             _executor = null;
             _log = null;
             _session = null;
@@ -116,7 +123,10 @@ namespace Acd.Mcp
                 return;
             }
 
-            _listener ??= new PipeListener(_executor!);
+            // The batch RPC handler needs a BatchUiState provider; until the
+            // palette is opened we fall back to an empty stub so agent calls
+            // that depend on UI state fail loudly with a clear message.
+            _listener ??= new PipeListener(_executor!, BatchRpcMethodHandler);
             _listener.Start();
             EditorMessage($"[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.");
         });
@@ -163,9 +173,25 @@ namespace Acd.Mcp
                 return;
             }
 
-            _palette ??= new ReplPaletteSet(_executor!, _session!, _log!);
+            _palette ??= new ReplPaletteSet(_executor!, _session!, _log!, _batchExecutor!);
+            // The BATCH tab's view-model implements BatchUiState; once the
+            // palette exists, route the batch RPC handler at it so the agent
+            // can query the user's current folder + mask + file selection.
+            _batchRpc = new BatchRpcHandler(_batchExecutor!, _palette.BatchViewModel);
             _palette.Visible = true;
         });
+
+        // Listener-side dispatch for batch.* methods. The actual handler is
+        // re-pointed when the palette opens; before then, only a stub that
+        // returns a "palette not open" error is in use.
+        private static Task<object?> BatchRpcMethodHandler(string method, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken ct)
+        {
+            if (!method.StartsWith("batch.")) return Task.FromResult<object?>(null);
+            if (_batchRpc is null)
+                throw new InvalidOperationException(
+                    "BATCH palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
+            return _batchRpc.DispatchAsync(method, parameters, ct);
+        }
 
         // Lazy-init the in-process core. Returns false with a human-readable
         // reason instead of throwing, so commands can surface clean messages.
@@ -183,6 +209,7 @@ namespace Acd.Mcp
                 _log ??= new ExecutionLog();
                 _session ??= new ScriptSession(_dtoJsonOptions);
                 _executor ??= new AcadExecutor(_mainSync, _session, _log);
+                _batchExecutor ??= new BatchExecutor();
                 reason = "";
                 return true;
             }

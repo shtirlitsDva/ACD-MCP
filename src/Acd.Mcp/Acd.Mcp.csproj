@@ -45,6 +45,12 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- AutoCAD-free runtime. Plugin provides the AutoCAD-bound host and
+         session; runtime owns the loop, Outcome union, step DSL, history. -->
+    <ProjectReference Include="..\Acd.Mcp.Batch\Acd.Mcp.Batch.csproj" />
+  </ItemGroup>
+
   <PropertyGroup Condition=" '$(Platform)' == 'x64' ">
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>

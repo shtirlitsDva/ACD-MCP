@@ -1,0 +1,149 @@
+<UserControl x:Class="Acd.Mcp.Batch.Ui.BatchControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="700"
+             Background="{DynamicResource Brush.Bg.Window}"
+             Foreground="{DynamicResource Brush.Fg.Primary}">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Acd.Mcp;component/Ui/Themes/Theme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="120"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="2*" MinHeight="120"/>
+        </Grid.RowDefinitions>
+
+        <!-- Files strip: folder + mask + recurse + matched summary -->
+        <Border Grid.Row="0" Style="{StaticResource Border.SectionStrip}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="Folder:" VerticalAlignment="Center" Margin="0,0,6,2"
+                           Style="{StaticResource Text.Secondary}"/>
+                <TextBox Grid.Row="0" Grid.Column="1"
+                         Text="{Binding Folder, UpdateSourceTrigger=PropertyChanged}"
+                         Margin="0,0,6,2"/>
+                <Button Grid.Row="0" Grid.Column="2"
+                        Content="Browse…" Command="{Binding BrowseCommand}"
+                        Margin="0,0,0,2"/>
+
+                <DockPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" LastChildFill="True">
+                    <TextBlock Text="Mask:" VerticalAlignment="Center"
+                               Style="{StaticResource Text.Secondary}" Margin="0,0,6,0"/>
+                    <TextBox Width="140" Margin="0,0,12,0"
+                             Text="{Binding Mask, UpdateSourceTrigger=PropertyChanged}"/>
+                    <CheckBox Content="Recurse" Margin="0,0,12,0"
+                              IsChecked="{Binding Recurse}"
+                              VerticalAlignment="Center"/>
+                    <Button Content="Refresh" Command="{Binding RefreshCommand}" Margin="0,0,12,0"/>
+                    <TextBlock Text="{Binding MatchedSummary}"
+                               Style="{StaticResource Text.Secondary}"
+                               VerticalAlignment="Center"/>
+                </DockPanel>
+            </Grid>
+        </Border>
+
+        <!-- Editor toolbar -->
+        <Border Grid.Row="1" Style="{StaticResource Border.SectionStrip}">
+            <DockPanel LastChildFill="True">
+                <Button Content="Manage scripts…" Command="{Binding ManageScriptsCommand}"
+                        Margin="0,0,12,0"/>
+                <TextBlock Text="Editor (live-shared slot)"
+                           Style="{StaticResource Text.Secondary}"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Editor: AvalonEdit with C# highlighting -->
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                BorderThickness="0,0,0,1"
+                Background="{DynamicResource Brush.Bg.Window}">
+            <avalon:TextEditor x:Name="Editor"
+                               SyntaxHighlighting="C#"
+                               ShowLineNumbers="True"
+                               WordWrap="False"
+                               HorizontalScrollBarVisibility="Auto"
+                               VerticalScrollBarVisibility="Auto"
+                               Background="{DynamicResource Brush.Bg.Window}"
+                               Foreground="{DynamicResource Brush.Fg.Primary}"
+                               LineNumbersForeground="{DynamicResource Brush.Fg.Secondary}"/>
+        </Border>
+
+        <!-- Execution: Test/Live slide-switch + Run / Cancel + status -->
+        <Border Grid.Row="3" Style="{StaticResource Border.SectionStrip}">
+            <DockPanel LastChildFill="True">
+                <ToggleButton x:Name="LiveSwitch"
+                              Style="{StaticResource SlideSwitch.TestLive}"
+                              IsChecked="{Binding LiveSelected}"
+                              Margin="0,0,12,0"/>
+                <Button Content="Run" Command="{Binding RunCommand}" Margin="0,0,6,0" MinWidth="60"/>
+                <Button Content="Cancel" Command="{Binding CancelCommand}"
+                        IsEnabled="{Binding IsRunning}" Margin="0,0,12,0" MinWidth="60"/>
+                <TextBlock Text="{Binding StatusLine}"
+                           Style="{StaticResource Text.Secondary}"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Results section header -->
+        <Border Grid.Row="4" Style="{StaticResource Border.SectionStrip}">
+            <TextBlock Text="Per-file results"
+                       Style="{StaticResource Text.SectionHeader}"/>
+        </Border>
+
+        <!-- Results list -->
+        <ListBox Grid.Row="5" ItemsSource="{Binding Results}">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="6,3,6,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="2*" MinWidth="120"/>
+                            <ColumnDefinition Width="60"/>
+                            <ColumnDefinition Width="60"/>
+                            <ColumnDefinition Width="3*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                                   FontFamily="{StaticResource Font.Mono}"
+                                   Style="{StaticResource Text.LogRowHeader}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding FileName}"
+                                   FontFamily="{StaticResource Font.Mono}"
+                                   Style="{StaticResource Text.LogRowHeader}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Grid.Column="2" Text="{Binding StatusText}"
+                                   FontFamily="{StaticResource Font.Mono}"
+                                   Style="{StaticResource Text.LogRowHeader}"/>
+                        <TextBlock Grid.Column="3" Text="{Binding Phase}"
+                                   Style="{StaticResource Text.Secondary}"/>
+                        <TextBlock Grid.Column="4" Text="{Binding Detail}"
+                                   Style="{StaticResource Text.Secondary}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>

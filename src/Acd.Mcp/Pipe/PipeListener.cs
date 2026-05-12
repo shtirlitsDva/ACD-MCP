@@ -8,9 +8,16 @@ namespace Acd.Mcp.Pipe
     // Transport. Listens on a named pipe, frames JSON-RPC requests, hands them to
     // the executor, frames responses back. Knows nothing about threads, documents,
     // or the script session — the executor owns that complexity.
+    // Delegate that handles a JSON-RPC method outside of PipeListener's
+    // built-in core methods (ping / reset / execute). Returns null to
+    // indicate "not my method" — the listener then falls through to
+    // MethodNotFound. Returns any object to use as the JSON-RPC result.
+    public delegate Task<object?> MethodHandler(string method, System.Text.Json.JsonElement parameters, CancellationToken ct);
+
     public sealed class PipeListener : IDisposable
     {
         private readonly AcadExecutor _executor;
+        private readonly MethodHandler? _extraHandler;
         private CancellationTokenSource? _cts;
         private Task? _loop;
         private readonly object _lock = new();
@@ -18,9 +25,10 @@ namespace Acd.Mcp.Pipe
         public string PipeName { get; }
         public bool IsRunning { get; private set; }
 
-        public PipeListener(AcadExecutor executor)
+        public PipeListener(AcadExecutor executor, MethodHandler? extraHandler = null)
         {
             _executor = executor;
+            _extraHandler = extraHandler;
             PipeName = $"acd-mcp-{Process.GetCurrentProcess().Id}";
         }
 
@@ -166,6 +174,11 @@ namespace Acd.Mcp.Pipe
                         return JsonRpcResponse.Ok(req.Id, result);
 
                     default:
+                        if (_extraHandler is not null)
+                        {
+                            var extra = await _extraHandler(req.Method, req.Params, ct).ConfigureAwait(false);
+                            if (extra is not null) return JsonRpcResponse.Ok(req.Id, extra);
+                        }
                         return JsonRpcResponse.Err(req.Id, ErrorCodes.MethodNotFound,
                             $"Method not found: {req.Method}");
                 }
