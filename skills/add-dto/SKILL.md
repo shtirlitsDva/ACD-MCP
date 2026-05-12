@@ -99,7 +99,7 @@ Acd.RegisterDto<Circle>(c => new
 </the-projection>
 
 <entity-metadata>
-For entity-attached metadata (block attributes, PropertySets on Civil 3D, eventually XData), use the data provider — never read one mechanism directly:
+For entity-attached metadata (block attributes, PropertySets on Civil 3D), use the data provider — never read one mechanism directly:
 
 ```csharp
 attributes = Acd.DataProvider.ReadAll(br)
@@ -108,6 +108,14 @@ attributes = Acd.DataProvider.ReadAll(br)
 Why: a user who stores `PartNumber` in block attributes vs PropertySets vs XData should get the same DTO output. Reading one mechanism by hand misses the others. The composite data provider checks every registered mechanism and returns the union.
 
 `Acd.DataProvider.ReadAll(entity)` returns `IReadOnlyDictionary<string, string>`. `Acd.DataProvider.TryRead(entity, key)` returns a single value or null. Both pull the current top transaction from the entity's database; if no transaction is active, they throw — make sure your script is inside a transaction when entity DTO is serialised.
+
+**What the composite contains depends on the vertical:**
+
+* On vanilla AutoCAD — block attributes only (block references are the only entities the BlockAttributeProvider can read).
+* On Civil 3D / Map / MEP — block attributes **plus** AECC PropertySets, when the AECC managed assemblies are loaded (`AecPropDataMgd` on 2025+; `AecBaseMgd` on older verticals).
+* XData is intentionally **not** in the composite. The provider is wired but throws on use — track the open issue rather than reading it by hand.
+
+`Acd.DataProvider` is reachable identically from REPL submissions and from DTO `.csx` bodies. Same call shape, same return type.
 </entity-metadata>
 
 <test-after-writing>

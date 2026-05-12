@@ -8,6 +8,11 @@ namespace Acd.Mcp.Serialization
     //
     // Keeping the interface non-generic lets the registry use a single
     // dictionary keyed by System.Type.
+    //
+    // Lives in Acd.Mcp.Api (default ALC) so any IL emitted from a DTO .csx
+    // submission can reference it without reaching into the plugin's
+    // isolated ALC. See AcadGlobals for the same constraint applied to the
+    // REPL globalsType.
     internal interface IDtoProjection
     {
         object? Project(object source);

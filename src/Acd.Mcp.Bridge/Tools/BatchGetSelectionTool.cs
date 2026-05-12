@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace Acd.Mcp.Bridge.Tools
@@ -42,8 +43,18 @@ namespace Acd.Mcp.Bridge.Tools
             "conversation, prefer those and tell the user to match the selection in the palette.")]
         public async Task<BatchSelectionResult> GetSelectionAsync(CancellationToken ct = default)
         {
-            return await _client.CallAsync<BatchSelectionResult>("batch.getSelection",
-                @params: null, ct).ConfigureAwait(false);
+            try
+            {
+                return await _client.CallAsync<BatchSelectionResult>("batch.getSelection",
+                    @params: null, ct).ConfigureAwait(false);
+            }
+            catch (AcadRpcException ex)
+            {
+                // Typical failure here is "BATCH palette is not open" — the
+                // agent needs to read that message and tell the user to
+                // open the palette first.
+                throw new McpException(ex.Message);
+            }
         }
     }
 

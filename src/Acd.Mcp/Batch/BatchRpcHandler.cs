@@ -61,8 +61,26 @@ namespace Acd.Mcp.Batch.Runtime
             var name = GetRequiredString(p, "name");
             var body = GetRequiredString(p, "script_body");
             var summary = GetOptionalString(p, "input_summary");
+
+            // Snapshot the editor's dirty flag BEFORE proposing. If it was
+            // dirty AND the new body differs from the current editor text,
+            // the UI will prompt the user to confirm the overwrite — the
+            // agent gets this signal back so it can warn the user
+            // proactively (see F19 in the crash-test journal). The
+            // user's actual Yes/No can't be reported synchronously here
+            // because the dialog is dispatcher-marshalled and the RPC
+            // call returns first.
+            bool willPromptForReplace =
+                _uiState.IsDirty && !string.Equals(_executor.CurrentScript, body, StringComparison.Ordinal);
+
             var saved = _executor.ProposeScript(name, body, summary);
-            return new { ok = true, saved_as = saved.Path, name = saved.Name };
+            return new
+            {
+                ok = true,
+                saved_as = saved.Path,
+                name = saved.Name,
+                replaced_dirty = willPromptForReplace,
+            };
         }
 
         private Task<object> HandleRunTestAsync(JsonElement p, CancellationToken ct)
@@ -231,9 +249,13 @@ namespace Acd.Mcp.Batch.Runtime
         }
     }
 
-    // The UI owns folder / mask / file list + on-failure policy. The pipe
-    // queries via this narrow read-only surface; the WPF view-model
-    // implements it.
+    // The UI owns folder / mask / file list + on-failure policy + the
+    // editor's dirty flag. The pipe queries via this narrow read-only
+    // surface; the WPF view-model implements it.
+    //
+    // IsDirty surfaces so propose_script can tell the agent up-front
+    // whether the user is about to be prompted about an overwrite —
+    // see F19 in the crash-test journal.
     public interface IBatchUiState
     {
         string CurrentFolder { get; }
@@ -241,5 +263,6 @@ namespace Acd.Mcp.Batch.Runtime
         bool Recurse { get; }
         IReadOnlyList<string> CurrentSelection { get; }
         BatchOnFailure OnFailure { get; }
+        bool IsDirty { get; }
     }
 }

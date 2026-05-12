@@ -23,19 +23,47 @@ Globals in scope for every `autocad_execute_csharp` call:
 * `Doc` — `Autodesk.AutoCAD.ApplicationServices.Document` (active doc)
 * `Db`  — `Doc.Database`
 * `Ed`  — `Doc.Editor`
+* `CivilDoc` — `Autodesk.Civil.ApplicationServices.CivilDocument` (null when the active drawing isn't a Civil 3D / Map / MEP drawing — guard or wrap in try/catch)
+* `Acd` — read-only metadata façade. Today exposes `Acd.DataProvider.ReadAll(entity)` / `Acd.DataProvider.TryRead(entity, key)`. See `<serialization-etiquette>`.
 
-The full `Autodesk.AutoCAD.*` namespace tree is imported (`ApplicationServices`, `DatabaseServices`, `Geometry`, `EditorInput`, `Runtime`). Top-level declarations persist between calls — `var x = 5` typed now is still in scope next call.
+Imported namespaces (you can use unqualified type names from these):
 
-**Lock + transaction pattern** — the executor already wraps your snippet in `Doc.LockDocument()`. You still open transactions yourself:
+* `System`, `System.Collections.Generic`, `System.Linq`, `System.IO`, `System.Text`
+* `Autodesk.AutoCAD.ApplicationServices`, `Autodesk.AutoCAD.DatabaseServices`, `Autodesk.AutoCAD.Geometry`, `Autodesk.AutoCAD.EditorInput`, `Autodesk.AutoCAD.Runtime`
+
+**Civil 3D namespaces are NOT in the default imports.** `Autodesk.Civil.DatabaseServices.Entity` collides with `Autodesk.AutoCAD.DatabaseServices.Entity`. If you need the Civil surface, add an explicit `using` at the top of your submission:
 
 ```csharp
-using var tx = Db.TransactionManager.StartTransaction();
-var bt = (BlockTable)tx.GetObject(Db.BlockTableId, OpenMode.ForRead);
-// ... read or write ...
-tx.Commit();
+using AcadEntity = Autodesk.AutoCAD.DatabaseServices.Entity;
+using Autodesk.Civil.DatabaseServices;  // adds Alignment, Surface, Pipe, etc.
 ```
 
+Top-level declarations persist between calls — `var x = 5` typed now is still in scope next call.
+
+**`using` directives go FIRST.** All `using` statements (namespace imports AND `using` aliases) must appear before any other statement in the submission. They cannot be mixed in after `var foo = ...;` declarations.
+
+**Lock + transaction pattern** — the executor already wraps your snippet in `Doc.LockDocument()`. You still open transactions yourself. The canonical form is the **block-form** `using` statement:
+
+```csharp
+using (var tx = Db.TransactionManager.StartTransaction())
+{
+    var bt = (BlockTable)tx.GetObject(Db.BlockTableId, OpenMode.ForRead);
+    // ... read or write ...
+    tx.Commit();
+}
+```
+
+Avoid `using var tx = ...;` at submission top level — Roslyn parses a top-level `using` as a directive (the namespace-import form), so `using var tx = ...;` is a CS1002 syntax error. Inside a method body (e.g. a helper you declared), `using var` works normally.
+
+**Trailing-expression return.** If your last statement is a bare expression ending with `;` (e.g. `x * 10;`), the executor strips the trailing semicolon so the value becomes the submission's return value. Same convention as LINQPad or `dotnet-script`.
+
 **Return small, well-shaped values.** The MCP serializes your snippet's return value via the DTO graph. See `<serialization-etiquette>`.
+
+**`dynamic` is not available.** `Microsoft.CSharp` is not in the script's reference set, so `dynamic` produces a "missing compiler required member" error. For late-bound calls, use reflection (`Type.InvokeMember`, `GetProperty`, `GetMethod`) — the surface is verbose but always works.
+
+**`Console.WriteLine` works.** The session captures stdout/stderr into the response. Use for ad-hoc tracing; small returns are still preferred over print-debugging for structured data.
+
+**`timeout_ms` is cooperative.** A tight loop that doesn't observe its CancellationToken blocks AutoCAD's main thread for the full duration. Treat the parameter as a soft hint, not a hard kill switch.
 </repl-conventions>
 
 <serialization-etiquette>
@@ -46,8 +74,9 @@ To get tidy, useful replies:
 * **Anonymous-projection at the leaf.** `new { layer = e.Layer, color = e.Color.ColorIndex }` always works, no DTO needed.
 * **Don't return whole `Entity` instances** unless a DTO exists. Project them.
 * **Primitives + geometry types are pre-DTO'd.** `int`, `double`, `string`, `Point2d`, `Point3d`, `Vector3d`, `Extents3d`, `ObjectId`, `Handle` — return them directly.
-* **For block attributes / PropertySets / XData, use `Acd.DataProvider.ReadAll(entity)`** — returns `IReadOnlyDictionary<string, string>` with the union of all metadata mechanisms. Reading any one of them by hand will miss the others for users who store metadata differently than you assumed.
+* **For block attributes / PropertySets, use `Acd.DataProvider.ReadAll(entity)`** — returns `IReadOnlyDictionary<string, string>` with the union of every registered metadata mechanism. Reading any one mechanism by hand misses the others for users who store metadata differently than you assumed. On vanilla AutoCAD the union is block-attributes-only; on Civil 3D / Map / MEP it also includes PropertySets. XData is intentionally not in the composite yet — track the issue rather than reading it by hand.
 * **When you see `{"$unsupported":"..."}`** — that's the signal to write a DTO. Hand the type to `/acd-mcp:add-dto`.
+* **When you see `{"$serialization_error":"..."}`** — the value couldn't be serialised (commonly: a return reference whose owning Transaction has been disposed). Re-run the snippet so the value is freshly built inside the active transaction, or project to primitives at the leaf.
 
 The serializer applies `JsonNamingPolicy.SnakeCaseLower` to property names. Either Pascal or snake_case in the projection is fine — they normalize.
 </serialization-etiquette>
@@ -85,8 +114,16 @@ Batch-specific rules live in `/acd-mcp:batch` — load that skill before doing a
 <initial-checks>
 On first use in a session, sanity-check the surface:
 
-1. Call `autocad_execute_csharp("Doc.Name")` — confirms the pipe is open and a drawing is loaded. If this fails with "BATCH palette is not open" or similar, the user needs to run `ACDMCP_START` (and `ACDMCP_PALETTE` if they want the in-AutoCAD UI).
-2. If you'll touch entity metadata, probe `typeof(PropertyDataServices)` to confirm whether the AECC stack is loaded (Civil 3D / Map 3D / MEP). On vanilla AutoCAD, PropertySets are unavailable and `Acd.DataProvider` will return only block-attribute + XData data.
+1. Call `autocad_execute_csharp("Doc.Name")` — confirms the pipe is open and a drawing is loaded. If the call returns "AutoCAD pipe unavailable: ..." or "BATCH palette is not open", the user has to run **`ACDMCP_START`** inside AutoCAD to open the pipe. Opening the BATCH palette alone is NOT enough — `ACDMCP_START` is the listener-start command.
+2. If you'll need the BATCH workflow, also have the user run `ACDMCP_PALETTE` to bring up the REPL/BATCH palette.
+3. If you'll touch entity metadata, probe whether the AECC stack is loaded:
+   ```csharp
+   AppDomain.CurrentDomain.GetAssemblies()
+       .Select(a => a.GetName().Name)
+       .Where(n => n != null && n.StartsWith("Aec"))
+       .ToList()
+   ```
+   On Civil 3D 2025, expect to see `AecPropDataMgd` (where `PropertyDataServices` lives) and friends. On vanilla AutoCAD, no `Aec*` assemblies are loaded and `Acd.DataProvider` will return block-attribute data only.
 
 Never guess at what's available — verify.
 </initial-checks>

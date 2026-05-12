@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
@@ -20,7 +21,7 @@ namespace Acd.Mcp.Scripting
     // loaded in the default ALC for the process lifetime (acceptable; documented).
     public sealed class ScriptSession
     {
-        private readonly AcadGlobals _globals = new();
+        private readonly AcadGlobals _globals;
         private readonly JsonSerializerOptions? _jsonOptions;
         private ScriptState? _state;
         private ScriptOptions _options = BuildOptions();
@@ -32,11 +33,15 @@ namespace Acd.Mcp.Scripting
         public ScriptState? CurrentState => _state;
         public AcadGlobals Globals => _globals;
 
-        // jsonOptions is the DTO-aware serializer the caller (plugin bootstrap)
-        // constructs. When null we fall back to ToString() only — keeps the
-        // session usable in tests that don't care about the JSON path.
-        public ScriptSession(JsonSerializerOptions? jsonOptions = null)
+        // globals carries the live `Acd.DataProvider` façade alongside Doc/
+        // Db/Ed/CivilDoc, so REPL submissions can read entity metadata via
+        // the same pattern DTO bodies use. jsonOptions is the DTO-aware
+        // serializer the caller (plugin bootstrap) constructs. When null we
+        // fall back to ToString() only — keeps the session usable in tests
+        // that don't care about the JSON path.
+        public ScriptSession(AcadGlobals globals, JsonSerializerOptions? jsonOptions = null)
         {
+            _globals = globals ?? throw new ArgumentNullException(nameof(globals));
             _jsonOptions = jsonOptions;
         }
 
@@ -101,6 +106,11 @@ namespace Acd.Mcp.Scripting
         // The most common failure mode is touching a closed AutoCAD entity
         // (script returned a reference whose owning Transaction is gone); we
         // capture and report instead of throwing.
+        //
+        // The "$serialization_error" key shares the `$` prefix with the
+        // converter's `$unsupported` marker. Agents pattern-match on the
+        // leading `$` to spot serializer-emitted sentinels — keeping both
+        // markers in the same family avoids a second pattern.
         private string? SerializeReturnValue(object? value)
         {
             if (value is null) return null;
@@ -112,7 +122,14 @@ namespace Acd.Mcp.Scripting
             }
             catch (Exception ex)
             {
-                return JsonSerializer.Serialize(new { serialization_error = ex.Message });
+                // Dictionary is the simplest way to emit a property whose name
+                // starts with `$` — C# identifiers cannot, so anonymous types
+                // can't carry that key directly.
+                var marker = new Dictionary<string, string>
+                {
+                    ["$serialization_error"] = ex.Message,
+                };
+                return JsonSerializer.Serialize(marker);
             }
         }
 
@@ -120,9 +137,19 @@ namespace Acd.Mcp.Scripting
         {
             // Anchor on AcadGlobals so the globalsType is always resolvable even
             // when AppDomain enumeration misses the plugin assembly (DevReload's
-            // byte[]-loaded ALC). See RoslynReferences for the why.
-            var refs = RoslynReferences.Build(typeof(AcadGlobals));
+            // byte[]-loaded ALC). System.Console is force-loaded so
+            // ConsoleCapture's redirected stdout/stderr actually accept a
+            // call (otherwise CS0103 'Console' does not exist — System.Console
+            // is lazy-loaded on demand and the AppDomain scan doesn't see it).
+            var refs = RoslynReferences.Build(
+                typeof(AcadGlobals),
+                typeof(System.Console));
 
+            // Imports deliberately exclude Autodesk.Civil.* — those namespaces
+            // define Entity and DBObject too, which collide with the AutoCAD
+            // types every REPL snippet uses. Users that need the Civil surface
+            // add `using Autodesk.Civil.DatabaseServices;` (or a `using` alias)
+            // at the top of their submission — explicit, not implicit.
             return ScriptOptions.Default
                 .WithReferences(refs)
                 .WithImports(
@@ -135,11 +162,7 @@ namespace Acd.Mcp.Scripting
                     "Autodesk.AutoCAD.DatabaseServices",
                     "Autodesk.AutoCAD.Geometry",
                     "Autodesk.AutoCAD.EditorInput",
-                    "Autodesk.AutoCAD.Runtime",
-                    "Autodesk.Civil",
-                    "Autodesk.Civil.ApplicationServices",
-                    "Autodesk.Civil.DatabaseServices",
-                    "Autodesk.Civil.DatabaseServices.Styles")
+                    "Autodesk.AutoCAD.Runtime")
                 .WithAllowUnsafe(false)
                 .WithOptimizationLevel(OptimizationLevel.Debug);
         }

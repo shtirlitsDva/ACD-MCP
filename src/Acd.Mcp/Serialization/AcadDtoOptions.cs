@@ -25,6 +25,14 @@ namespace Acd.Mcp.Serialization
                 PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
                 WriteIndented = false,
+                // AutoCAD geometry can legitimately yield Infinity / NaN
+                // (degenerate Distance, divide-by-zero in derived formulas).
+                // The default JSON behaviour throws on those values, which
+                // bubbles up as $serialization_error and erases the actual
+                // shape. Emit them as "Infinity" / "-Infinity" / "NaN"
+                // strings instead — readable, and the agent can pattern-
+                // match on the special name.
+                NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
                 // Anonymous objects produced by DTO projections include enums
                 // (LineWeight, ColorMethod, etc.). Writing them as names is
                 // friendlier to an agent than raw integers.

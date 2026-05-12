@@ -1,3 +1,4 @@
+using System;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -18,8 +19,16 @@ namespace Acd.Mcp.Api
     // ALC across hot-reloads. By living here, submissions reach into the
     // default ALC instead — already pinned by the host — so the isolated
     // ALC stays cleanly unloadable on MCPDEV.
+    //
+    // The same constraint applies to the entire `Acd` REPL surface (see
+    // AcdReplApi) and the DTO-loading types in Acd.Mcp.Api/Serialization.
     public sealed class AcadGlobals
     {
+        public AcadGlobals(AcdReplApi acd)
+        {
+            Acd = acd ?? throw new ArgumentNullException(nameof(acd));
+        }
+
         public Document Doc => Application.DocumentManager.MdiActiveDocument!;
         public Database Db => Doc.Database;
         public Editor Ed => Doc.Editor;
@@ -28,5 +37,10 @@ namespace Acd.Mcp.Api
         // AutoCAD). Callers either guard with a null check or wrap in try/catch
         // — same shape Civil scripts already expect from GetCivilDocument.
         public CivilDocument? CivilDoc => CivilApplication.ActiveDocument;
+
+        // The canonical REPL pattern `Acd.DataProvider.ReadAll(entity)`
+        // hangs off this. Same identifier (`Acd`) the DTO .csx files use,
+        // but limited to read-only surface — no RegisterDto in REPL.
+        public AcdReplApi Acd { get; }
     }
 }

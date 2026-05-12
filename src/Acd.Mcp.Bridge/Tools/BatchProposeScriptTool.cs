@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace Acd.Mcp.Bridge.Tools
@@ -49,10 +50,28 @@ namespace Acd.Mcp.Bridge.Tools
             string? input_summary = null,
             CancellationToken ct = default)
         {
-            return await _client.CallAsync<BatchProposeResult>("batch.proposeScript",
-                new { name, script_body, input_summary }, ct).ConfigureAwait(false);
+            try
+            {
+                return await _client.CallAsync<BatchProposeResult>("batch.proposeScript",
+                    new { name, script_body, input_summary }, ct).ConfigureAwait(false);
+            }
+            catch (AcadRpcException ex)
+            {
+                // Surface the plugin-side message verbatim. Without this,
+                // the MCP framework wraps the throw into a generic "An error
+                // occurred invoking ..." string and the agent can't
+                // self-diagnose. McpException.Message is propagated to the
+                // remote endpoint by the SDK.
+                throw new McpException(ex.Message);
+            }
         }
     }
 
-    public sealed record BatchProposeResult(bool ok, string saved_as, string name);
+    // `replaced_dirty` is the agent's signal that the editor had unsaved
+    // changes AND those changes differed from the proposed body at the moment
+    // of the call — so the user is being prompted (in the WPF dispatcher,
+    // asynchronously to the RPC return). The agent should warn the user that
+    // their in-flight edits are about to be replaced. The user's actual Yes/No
+    // is NOT reported here — it can't be: the dialog is async to the RPC.
+    public sealed record BatchProposeResult(bool ok, string saved_as, string name, bool replaced_dirty);
 }

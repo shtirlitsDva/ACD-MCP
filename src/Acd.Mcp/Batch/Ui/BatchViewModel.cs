@@ -86,6 +86,7 @@ namespace Acd.Mcp.Batch.Ui
         bool IBatchUiState.Recurse => Recurse;
         IReadOnlyList<string> IBatchUiState.CurrentSelection => Files.ToArray();
         BatchOnFailure IBatchUiState.OnFailure => OnFailure;
+        bool IBatchUiState.IsDirty => IsDirty;
 
         public BatchViewModel(BatchExecutor executor)
         {

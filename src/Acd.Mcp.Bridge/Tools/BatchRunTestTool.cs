@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace Acd.Mcp.Bridge.Tools
@@ -50,8 +51,19 @@ namespace Acd.Mcp.Bridge.Tools
             string? name = null,
             CancellationToken ct = default)
         {
-            return await _client.CallAsync<BatchRunStartedResult>("batch.runTest",
-                new { name }, ct).ConfigureAwait(false);
+            try
+            {
+                return await _client.CallAsync<BatchRunStartedResult>("batch.runTest",
+                    new { name }, ct).ConfigureAwait(false);
+            }
+            catch (AcadRpcException ex)
+            {
+                // Surface the plugin-side message — most common failure here
+                // is "No files are currently selected in the BATCH palette."
+                // or "BATCH editor buffer is empty.", both of which the
+                // agent must see to recover.
+                throw new McpException(ex.Message);
+            }
         }
     }
 

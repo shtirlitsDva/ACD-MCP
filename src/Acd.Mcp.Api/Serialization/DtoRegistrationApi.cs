@@ -1,3 +1,5 @@
+using System;
+
 namespace Acd.Mcp.Serialization
 {
     // The single `Acd` surface a DTO .csx file sees. Two responsibilities:
@@ -9,12 +11,19 @@ namespace Acd.Mcp.Serialization
     // Why one type instead of two: the user types `Acd.RegisterDto<...>` and
     // `Acd.DataProvider.ReadAll(...)` in the same file. Surfacing both off
     // one facade matches the literal syntax shape and keeps the globals
-    // type trivial. The internal collaborators (DtoRegistry, IEntityDataProvider)
-    // are constructor-injected so this class stays a thin façade.
+    // type trivial. The internal collaborators (DtoRegistry, the delegate
+    // pair backing DtoDataProviderApi) are constructor-injected so this
+    // class stays a thin façade.
     //
     // Each .csx file gets its own DtoRegistrationApi instance because the
     // Source tag carries the file's name into the registry — useful when
     // diagnosing "which file registered Circle?".
+    //
+    // Lives in Acd.Mcp.Api (default ALC) so the IL emitted by Roslyn for
+    // every `Acd.RegisterDto<...>(...)` call resolves to a default-ALC
+    // type. If this lived in Acd.Mcp (isolated ALC), the JIT bind would
+    // fail with FileNotFoundException on every DTO load — the same bug
+    // F7 in the crash-test journal documents.
     public sealed class DtoRegistrationApi
     {
         private readonly DtoRegistry _registry;
@@ -36,10 +45,10 @@ namespace Acd.Mcp.Serialization
         public DtoDataProviderApi DataProvider { get; }
     }
 
-    // CSharpScript globals. The script body sees `Acd` as if it were a local
-    // variable; `Acd.RegisterDto<Circle>(c => new { ... })` is the canonical
-    // call. Distinct from AcadGlobals (REPL) so the DTO file scope is small
-    // and predictable.
+    // CSharpScript globals for DTO .csx files. The script body sees `Acd` as
+    // if it were a local variable; `Acd.RegisterDto<Circle>(c => new { ... })`
+    // is the canonical call. Distinct from AcadGlobals (REPL) so the DTO
+    // file scope is small and predictable.
     public sealed class DtoRegistrationGlobals
     {
         public DtoRegistrationApi Acd { get; }

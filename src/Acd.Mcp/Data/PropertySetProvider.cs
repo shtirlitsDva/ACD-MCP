@@ -37,25 +37,25 @@ namespace Acd.Mcp.Data
         {
             try
             {
-                var aec = LoadAecAssembly();
-                if (aec is null)
-                {
-                    SafeBoundary.Info("PropertySetProvider",
-                        "AECC managed assembly not loaded (AecBaseMgd / AeccBaseMgd). PropertySets disabled — vanilla AutoCAD.");
-                    return;
-                }
-
+                // The AECC PropertyData types live in different assemblies on
+                // different verticals — AecBaseMgd on AEC, AeccBaseMgd on the
+                // Civil/Map/MEP stack pre-2024, AecPropDataMgd on Civil 3D
+                // 2025. F8 in the crash-test journal documents that the
+                // earlier name-based probe missed Civil 3D 2025 entirely.
+                // Resolve every type by full-name across all loaded
+                // assemblies — survives any vertical-rename Autodesk
+                // chooses next.
                 var missing = new List<string>();
-                var pds = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertyDataServices", missing);
-                var ps = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertySet", missing);
-                var psDef = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertySetDefinition", missing);
-                var psData = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertySetData", missing);
-                var pDef = ResolveType(aec, "Autodesk.Aec.PropertyData.DatabaseServices.PropertyDefinition", missing);
+                var pds = ResolveTypeAcrossLoaded("Autodesk.Aec.PropertyData.DatabaseServices.PropertyDataServices", missing);
+                var ps = ResolveTypeAcrossLoaded("Autodesk.Aec.PropertyData.DatabaseServices.PropertySet", missing);
+                var psDef = ResolveTypeAcrossLoaded("Autodesk.Aec.PropertyData.DatabaseServices.PropertySetDefinition", missing);
+                var psData = ResolveTypeAcrossLoaded("Autodesk.Aec.PropertyData.DatabaseServices.PropertySetData", missing);
+                var pDef = ResolveTypeAcrossLoaded("Autodesk.Aec.PropertyData.DatabaseServices.PropertyDefinition", missing);
 
                 if (pds is null || ps is null || psDef is null || psData is null || pDef is null)
                 {
                     SafeBoundary.Info("PropertySetProvider",
-                        $"AECC types missing in {aec.GetName().Name}: {string.Join(", ", missing)}. PropertySets disabled.");
+                        $"AECC types not resolvable: {string.Join(", ", missing)}. PropertySets disabled — vanilla AutoCAD.");
                     return;
                 }
 
@@ -83,7 +83,8 @@ namespace Acd.Mcp.Data
                 }
                 else
                 {
-                    SafeBoundary.Info("PropertySetProvider", $"AECC PropertySets available via {aec.GetName().Name}.");
+                    var owningAsm = pds.Assembly.GetName().Name ?? "<unknown>";
+                    SafeBoundary.Info("PropertySetProvider", $"AECC PropertySets available via {owningAsm}.");
                 }
             }
             catch (Exception ex)
@@ -94,11 +95,27 @@ namespace Acd.Mcp.Data
             }
         }
 
-        private static Type? ResolveType(Assembly asm, string fullName, List<string> missing)
+        // Probe every loaded assembly for a type by full name. Loaded order
+        // is unspecified; the first hit wins. AECC type identity should be
+        // unique across verticals (a given full name comes from exactly one
+        // managed assembly), so first-hit is safe.
+        private static Type? ResolveTypeAcrossLoaded(string fullName, List<string> missing)
         {
-            var t = asm.GetType(fullName);
-            if (t is null) missing.Add($"type:{fullName}");
-            return t;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    var t = asm.GetType(fullName, throwOnError: false);
+                    if (t is not null) return t;
+                }
+                catch
+                {
+                    // ReflectionTypeLoadException can be raised on a partial
+                    // load; skip the assembly and continue probing the rest.
+                }
+            }
+            missing.Add($"type:{fullName}");
+            return null;
         }
 
         private static MethodInfo? ResolveMethod(Type t, string name, Type[] sig, List<string> missing)
@@ -186,22 +203,6 @@ namespace Acd.Mcp.Data
                 // Partial dictionary is more useful than nothing.
             }
             return map;
-        }
-
-        private static Assembly? LoadAecAssembly()
-        {
-            // The AECC managed assemblies follow the naming pattern AecBaseMgd /
-            // AeccBaseMgd / AeccDbMgd depending on the AutoCAD vertical. We
-            // require AecBaseMgd (PropertyData lives there) — accept any
-            // already-loaded name match.
-            return AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(a =>
-                {
-                    var name = a.GetName().Name;
-                    return name is not null &&
-                        (name.Equals("AecBaseMgd", StringComparison.OrdinalIgnoreCase) ||
-                         name.Equals("AeccBaseMgd", StringComparison.OrdinalIgnoreCase));
-                });
         }
 
         private static readonly IReadOnlyDictionary<string, string> Empty =

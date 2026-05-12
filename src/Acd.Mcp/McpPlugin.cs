@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Acd.Mcp.Api;
+using Acd.Mcp.Batch;
 using Acd.Mcp.Batch.Runtime;
 using Acd.Mcp.Data;
 using Acd.Mcp.Pipe;
@@ -51,11 +53,18 @@ namespace Acd.Mcp
         // the DtoConverter so the $unsupported marker can carry compile-
         // error context inline, and with _dtoRpc so the agent can also
         // query the full list via acd-mcp://dto-system/diagnostics.
+        //
+        // _dataProviderApi is the same instance threaded through both DTO
+        // bodies (via DtoRegistrationApi.DataProvider) and the REPL (via
+        // AcadGlobals.Acd.DataProvider) — one composite, one place where
+        // the read-all / try-read delegates resolve to the live provider
+        // chain.
         private static DtoRegistry? _dtoRegistry;
         private static DtoLoader? _dtoLoader;
         private static DtoDiagnostics? _dtoDiagnostics;
         private static DtoRpcHandler? _dtoRpc;
         private static JsonSerializerOptions? _dtoJsonOptions;
+        private static DtoDataProviderApi? _dataProviderApi;
 
         public void Initialize()
         {
@@ -84,7 +93,16 @@ namespace Acd.Mcp
             // Terminate MUST NOT throw — DevReload's unload path needs to complete
             // for the ALC to actually unload. Each tear-down step is isolated so
             // one failure cannot skip the next.
-            SafeBoundary.Run("McpPlugin.Terminate/palette.Close",  () => _palette?.Close());
+            //
+            // Close() is only meaningful when the palette is currently visible —
+            // and Autodesk's base PaletteSet has been observed to NRE when its
+            // wrapped Window is half-initialised (palette never shown, or user
+            // manually closed it). The Visible guard avoids the spurious log
+            // entry; Dispose() still handles full teardown either way.
+            SafeBoundary.Run("McpPlugin.Terminate/palette.Close", () =>
+            {
+                if (_palette is { Visible: true }) _palette.Close();
+            });
             SafeBoundary.Run("McpPlugin.Terminate/palette.Dispose", () => _palette?.Dispose());
             _palette = null;
 
@@ -105,6 +123,7 @@ namespace Acd.Mcp
             _dtoDiagnostics = null;
             _dtoRpc = null;
             _dtoJsonOptions = null;
+            _dataProviderApi = null;
             SafeBoundary.Info("Terminate", $"{Version}");
             SafeBoundary.Run("McpPlugin.Terminate/echo", () => EditorMessage($"[ACD-MCP] Terminate() {Version}"));
         }
@@ -225,7 +244,15 @@ namespace Acd.Mcp
             {
                 EnsureDtoGraph();
                 _log ??= new ExecutionLog();
-                _session ??= new ScriptSession(_dtoJsonOptions);
+                if (_session is null)
+                {
+                    // REPL globals get the same data-provider façade DTO
+                    // bodies use, so `Acd.DataProvider.ReadAll(entity)`
+                    // resolves the same way in both contexts. See
+                    // AcdReplApi for the why.
+                    var replGlobals = new AcadGlobals(new AcdReplApi(_dataProviderApi!));
+                    _session = new ScriptSession(replGlobals, _dtoJsonOptions);
+                }
                 _executor ??= new AcadExecutor(_mainSync, _session, _log);
                 _batchExecutor ??= new BatchExecutor();
                 reason = "";
@@ -253,8 +280,19 @@ namespace Acd.Mcp
             _dtoRegistry = new DtoRegistry();
             _dtoDiagnostics = new DtoDiagnostics();
             var providers = EntityDataProviders.CreateDefault();
-            var providerApi = new DtoDataProviderApi(providers);
-            _dtoLoader = new DtoLoader(_dtoRegistry, providerApi, _dtoDiagnostics);
+            // Adapt the Outcome-based internal provider to the delegate pair
+            // DtoDataProviderApi takes. The collapse of Outcome → null at
+            // this boundary is intentional: the public API surface keeps
+            // Acd.Mcp.Api free of any Acd.Mcp.Batch type, so the assembly
+            // doesn't need a cross-ALC reference. The richer Outcome
+            // remains useful inside the composite for chained-provider
+            // error propagation; collapsing it for the DTO/REPL boundary
+            // matches the existing contract.
+            _dataProviderApi = new DtoDataProviderApi(
+                readAll: (e, tx) => providers.ReadAll(e, tx),
+                tryRead: (e, tx, k) =>
+                    providers.TryRead(e, tx, k) is Outcome<string>.Pass p ? p.Value : null);
+            _dtoLoader = new DtoLoader(_dtoRegistry, _dataProviderApi, _dtoDiagnostics);
 
             var reload = new DtoReloadTrigger(_dtoLoader);
             _dtoJsonOptions = AcadDtoOptions.Build(_dtoRegistry, reload, _dtoDiagnostics);

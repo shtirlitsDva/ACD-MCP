@@ -146,14 +146,22 @@ The exact ordered workflow for a typical task:
    inspect:
 
    ```csharp
-   using var sample = new Database(false, true);
-   sample.ReadDwgFile(@"C:\drawings\house-12_SHT.dwg",
-                      System.IO.FileShare.Read, true, "");
-   using var tx = sample.TransactionManager.StartTransaction();
-   var lt = (LayerTable)tx.GetObject(sample.LayerTableId, OpenMode.ForRead);
-   var layers = new List<string>();
-   foreach (ObjectId id in lt) layers.Add(((LayerTableRecord)tx.GetObject(id, OpenMode.ForRead)).Name);
-   layers
+   // `using` directives go FIRST (top-level rule for REPL submissions).
+   // `using var` does not parse at submission top level — use block-form
+   // `using (var ... ) { ... }` for disposables.
+   using (var sample = new Database(false, true))
+   {
+       sample.ReadDwgFile(@"C:\drawings\house-12_SHT.dwg",
+                          System.IO.FileShare.Read, true, "");
+       using (var tx = sample.TransactionManager.StartTransaction())
+       {
+           var lt = (LayerTable)tx.GetObject(sample.LayerTableId, OpenMode.ForRead);
+           var layers = new List<string>();
+           foreach (ObjectId id in lt)
+               layers.Add(((LayerTableRecord)tx.GetObject(id, OpenMode.ForRead)).Name);
+           return layers;
+       }
+   }
    ```
 
    The assumption is that one or two drawings are representative of the
@@ -171,7 +179,12 @@ The exact ordered workflow for a typical task:
        script_body = "...",
        input_summary = "set transparency=0 on layer X-FOO")
    ```
-   If the user has dirty edits, they're prompted to confirm the replace.
+   If the user has dirty edits, they're prompted to confirm the replace. The
+   tool response carries `replaced_dirty: true` whenever the editor was
+   dirty AND your proposed body differs from the current editor text — that
+   means a confirm dialog is being shown to the user asynchronously. Tell
+   the user in your reply so they know to look at the palette and click
+   Yes/No.
 
 5. **Get the folder selection.** Call
    ```

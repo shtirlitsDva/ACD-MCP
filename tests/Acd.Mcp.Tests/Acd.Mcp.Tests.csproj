@@ -14,11 +14,18 @@
     the AutoCAD-free source files directly via <Compile Include="...">.
     Everything tested here is pure logic (Outcome, DTO header parsing,
     registry, converter factory dispatch) and needs no AutoCAD surface.
+
+    DtoRegistry and IDtoProjection now live in Acd.Mcp.Api (the registry +
+    projection contracts must bind through the default ALC so DTO .csx
+    submissions can reach them). The Acd.Mcp.Api csproj itself references
+    AutoCAD via NuGet (Speckle.Civil3D + AutoCAD.NET), so the test project
+    keeps the file-level Compile-Include approach rather than a project
+    reference — same pure-logic compile, no AutoCAD surface needed.
   -->
   <ItemGroup>
     <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoHeader.cs" Link="Sut\DtoHeader.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoRegistry.cs" Link="Sut\DtoRegistry.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Serialization\IDtoProjection.cs" Link="Sut\IDtoProjection.cs" />
+    <Compile Include="..\..\src\Acd.Mcp.Api\Serialization\DtoRegistry.cs" Link="Sut\DtoRegistry.cs" />
+    <Compile Include="..\..\src\Acd.Mcp.Api\Serialization\IDtoProjection.cs" Link="Sut\IDtoProjection.cs" />
     <Compile Include="..\..\src\Acd.Mcp\Serialization\IDtoReloadTrigger.cs" Link="Sut\IDtoReloadTrigger.cs" />
     <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoConverterFactory.cs" Link="Sut\DtoConverterFactory.cs" />
     <Compile Include="..\..\src\Acd.Mcp\Serialization\AcadDtoOptions.cs" Link="Sut\AcadDtoOptions.cs" />
@@ -36,6 +43,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>

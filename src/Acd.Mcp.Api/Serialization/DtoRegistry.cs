@@ -1,4 +1,7 @@
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Acd.Mcp.Serialization
 {
@@ -9,6 +12,12 @@ namespace Acd.Mcp.Serialization
     // system) without the registry needing to know about folders. The loader
     // simply registers user files AFTER system files within a transaction, and
     // calls `Register` with `overwrite: true` for the second pass.
+    //
+    // Lives in Acd.Mcp.Api (default ALC) — Roslyn-emitted IL from DTO .csx
+    // submissions JIT-loads through the default ALC, so DtoRegistrationApi's
+    // field of this type must be resolvable from that ALC. The composite data
+    // providers, converter factory, and loader continue to live in Acd.Mcp
+    // (isolated ALC) and reach in through InternalsVisibleTo for TryGet.
     public sealed class DtoRegistry
     {
         private readonly ConcurrentDictionary<Type, IDtoProjection> _entries = new();
