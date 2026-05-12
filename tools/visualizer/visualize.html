@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ACD-MCP Entity Visualizer</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#111; color:#eee;
+               font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  #toolbar { position:fixed; top:0; left:0; right:0; padding:8px 12px;
+             background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+             display:flex; gap:14px; align-items:center; z-index:10;
+             font-size: 13px; border-bottom: 1px solid #222; }
+  #toolbar input[type=file] { color:#bbb; font-size:12px; }
+  #toolbar button {
+     background:#222; color:#ddd; border:1px solid #333; padding:5px 10px;
+     border-radius:4px; cursor:pointer; font-size:12px; }
+  #toolbar button:hover { background:#333; }
+  #info { margin-left:auto; opacity:.7; font-size: 11px; }
+  #canvas-wrap { position:absolute; top:42px; bottom:0; left:0; right:340px; overflow:hidden; }
+  #layers { position:absolute; top:42px; right:0; bottom:0; width:340px;
+            background:#171717; border-left:1px solid #222; overflow:auto;
+            padding:10px 12px; font-size:12px; }
+  #layers h3 { margin: 0 0 8px 0; font-size: 12px; color:#999;
+               text-transform: uppercase; letter-spacing:.05em; }
+  .layer-row { display:flex; align-items:center; gap:6px; padding: 2px 0;
+               cursor:pointer; user-select:none; }
+  .layer-row:hover { color:#fff; }
+  .swatch { width:11px; height:11px; border:1px solid #333; flex-shrink:0; }
+  .layer-row span.count { margin-left:auto; opacity:.5; font-size:10px; }
+  .layer-row.off { opacity:.32; text-decoration: line-through; }
+  svg { display:block; cursor:grab; background:#0a0a0a; }
+  svg:active { cursor:grabbing; }
+  text { font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", monospace;
+         font-size: 1px; fill: #ccc; }
+  .lbl-bref { fill:#888; font-size:.9px; }
+  .empty-hint { padding:24px; color:#555; text-align:center; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <strong>ACD-MCP visualizer</strong>
+  <input type="file" id="file" accept=".json,application/json">
+  <button id="paste-btn" title="Paste JSON from clipboard">Paste JSON</button>
+  <button id="example-btn" title="Load bundled example">Example</button>
+  <button id="fit-btn">Fit (F)</button>
+  <button id="bg-btn" title="Toggle background">BG</button>
+  <span id="info">No drawing loaded</span>
+</div>
+
+<div id="canvas-wrap"></div>
+
+<div id="layers">
+  <h3>Layers</h3>
+  <div id="layer-list"><div class="empty-hint">Load a JSON dump to begin.</div></div>
+</div>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------------------
+// AutoCAD ACI -> RGB. Cribbed-by-memory subset for the most common indices;
+// "unknown" indices fall back to white. Good enough for at-a-glance previews.
+// ---------------------------------------------------------------------------
+const ACI = {
+   1: '#ff0000',  2: '#ffff00',  3: '#00ff00',  4: '#00ffff',  5: '#0000ff',
+   6: '#ff00ff',  7: '#ffffff',  8: '#414141',  9: '#808080', 30: '#ff7f00',
+  40: '#ff3f00', 50: '#ffff00', 60: '#7fff00', 70: '#00ff00', 80: '#00ff7f',
+  90: '#00ff7f',100: '#00ffff',110: '#007fff',120: '#0000ff',130: '#3f00ff',
+ 140: '#7f00ff',150: '#ff00ff',160: '#ff007f',170: '#ff4040',180: '#a0a000',
+ 190: '#7faf00',200: '#00a000',210: '#00a07f',212: '#00a0a0',230: '#005fa0',
+ 240: '#3f00a0',250: '#333333',251: '#5b5b5b',252: '#848484',253: '#bebebe',
+};
+function aciColor(i, fallback = '#bbbbbb') { return ACI[i] || fallback; }
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let data = null;
+let view = { tx: 0, ty: 0, s: 1 };       // svg viewBox-ish transform
+let layerVisible = new Map();            // layer -> bool
+let svg = null;
+let bgDark = true;
+
+const wrap   = document.getElementById('canvas-wrap');
+const info   = document.getElementById('info');
+const lpanel = document.getElementById('layer-list');
+
+// ---------------------------------------------------------------------------
+// Load handlers
+// ---------------------------------------------------------------------------
+document.getElementById('file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const t = await f.text();
+  loadJson(t);
+});
+
+document.getElementById('paste-btn').addEventListener('click', async () => {
+  try {
+    const t = await navigator.clipboard.readText();
+    loadJson(t);
+  } catch (err) {
+    alert('Clipboard read failed: ' + err.message + '\nPaste into the prompt instead.');
+    const t = prompt('Paste JSON here:');
+    if (t) loadJson(t);
+  }
+});
+
+document.getElementById('example-btn').addEventListener('click', () => {
+  fetch('./example.json').then(r => r.text()).then(loadJson).catch(() =>
+    alert('No example.json in this folder yet — drop one in to enable.'));
+});
+
+document.getElementById('fit-btn').addEventListener('click', () => fit());
+document.getElementById('bg-btn').addEventListener('click', () => {
+  bgDark = !bgDark;
+  document.body.style.background = bgDark ? '#111' : '#f5f5f0';
+  document.body.style.color = bgDark ? '#eee' : '#111';
+  if (svg) svg.style.background = bgDark ? '#0a0a0a' : '#fafafa';
+});
+window.addEventListener('keydown', (e) => { if (e.key === 'f' || e.key === 'F') fit(); });
+
+function loadJson(t) {
+  let parsed;
+  try { parsed = JSON.parse(t); }
+  catch (e) { alert('Invalid JSON: ' + e.message); return; }
+  // Accept either the raw return value or the full MCP envelope.
+  if (parsed.returnValueJson) {
+    try { parsed = JSON.parse(parsed.returnValueJson); }
+    catch { /* leave parsed alone */ }
+  }
+  if (!parsed.entities) {
+    alert('JSON has no `entities` array. Did you dump model space with dump_modelspace.csx?');
+    return;
+  }
+  data = parsed;
+  rebuildLayers();
+  render();
+  fit();
+  info.textContent =
+    `${data.entity_count ?? data.entities.length} entities` +
+    (data.truncated ? ' (truncated)' : '') +
+    `, ${layerVisible.size} layers`;
+}
+
+// ---------------------------------------------------------------------------
+// Layer panel
+// ---------------------------------------------------------------------------
+function rebuildLayers() {
+  layerVisible.clear();
+  const counts = new Map();
+  for (const e of data.entities) {
+    const k = e.l ?? '(none)';
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const layers = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [n] of layers) layerVisible.set(n, true);
+  lpanel.innerHTML = '';
+  for (const [n, c] of layers) {
+    const row = document.createElement('div');
+    row.className = 'layer-row';
+    row.dataset.layer = n;
+    const sw = document.createElement('div');
+    sw.className = 'swatch';
+    const ci = data.layer_colors?.[n];
+    sw.style.background = aciColor(ci);
+    row.append(sw);
+    const lbl = document.createElement('span');
+    lbl.textContent = n;
+    row.append(lbl);
+    const cnt = document.createElement('span');
+    cnt.className = 'count';
+    cnt.textContent = c;
+    row.append(cnt);
+    row.addEventListener('click', () => {
+      const cur = layerVisible.get(n);
+      layerVisible.set(n, !cur);
+      row.classList.toggle('off', cur);   // toggle off-state visually
+      render();
+    });
+    lpanel.append(row);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Render — emit one big SVG, apply a flip-Y group, populate from entities.
+// ---------------------------------------------------------------------------
+function render() {
+  wrap.innerHTML = '';
+  svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width',  '100%');
+  svg.setAttribute('height', '100%');
+  svg.style.background = bgDark ? '#0a0a0a' : '#fafafa';
+  wrap.append(svg);
+
+  const root = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  root.setAttribute('id', 'root');
+  svg.append(root);
+  applyTransform();
+
+  for (const e of data.entities) {
+    if (!layerVisible.get(e.l ?? '(none)')) continue;
+    // ColorIndex semantics: 0 = ByBlock, 256 = ByLayer, 1..255 = ACI.
+    // For ByLayer/ByBlock we fall back to the layer's color.
+    const useLayer = (e.ci == null) || (e.ci === 0) || (e.ci >= 256);
+    const ci = useLayer ? data.layer_colors?.[e.l] ?? 7 : e.ci;
+    const stroke = aciColor(ci, bgDark ? '#bbb' : '#222');
+    drawOne(root, e, stroke);
+  }
+
+  bindInteractions(svg);
+}
+
+function applyTransform() {
+  const root = document.getElementById('root');
+  if (!root) return;
+  // Flip Y so positive Y goes up like AutoCAD; user-zoom on top.
+  root.setAttribute(
+    'transform',
+    `translate(${view.tx} ${view.ty}) scale(${view.s} ${-view.s})`);
+}
+
+function drawOne(parent, e, stroke) {
+  const ns = 'http://www.w3.org/2000/svg';
+  // `vector-effect: non-scaling-stroke` keeps stroke widths constant in
+  // screen pixels regardless of zoom — no need to fight CTM math ourselves.
+  const sw = 1.2;
+  switch (e.t) {
+    case 'line': {
+      const l = document.createElementNS(ns, 'line');
+      l.setAttribute('x1', e.x1); l.setAttribute('y1', e.y1);
+      l.setAttribute('x2', e.x2); l.setAttribute('y2', e.y2);
+      l.setAttribute('stroke', stroke); l.setAttribute('stroke-width', sw);
+      l.setAttribute('vector-effect', 'non-scaling-stroke');
+      parent.append(l);
+      break;
+    }
+    case 'circle': {
+      const c = document.createElementNS(ns, 'circle');
+      c.setAttribute('cx', e.x); c.setAttribute('cy', e.y); c.setAttribute('r', e.r);
+      c.setAttribute('stroke', stroke); c.setAttribute('stroke-width', sw);
+      c.setAttribute('fill', 'none');
+      c.setAttribute('vector-effect', 'non-scaling-stroke');
+      parent.append(c);
+      break;
+    }
+    case 'arc': {
+      // SVG arc path
+      const x1 = e.x + e.r * Math.cos(e.a1), y1 = e.y + e.r * Math.sin(e.a1);
+      const x2 = e.x + e.r * Math.cos(e.a2), y2 = e.y + e.r * Math.sin(e.a2);
+      const sweep = e.a2 - e.a1;
+      const largeArc = (sweep % (2*Math.PI) > Math.PI) ? 1 : 0;
+      const p = document.createElementNS(ns, 'path');
+      p.setAttribute('d', `M ${x1} ${y1} A ${e.r} ${e.r} 0 ${largeArc} 1 ${x2} ${y2}`);
+      p.setAttribute('stroke', stroke); p.setAttribute('stroke-width', sw);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      parent.append(p);
+      break;
+    }
+    case 'ellipse': {
+      // Approximate by sampling — AutoCAD ellipses have arbitrary major-axis
+      // direction, so a plain <ellipse> element with rotate is more code than
+      // a polyline with 64 samples.
+      const samples = 64;
+      const mAng = Math.atan2(e.my, e.mx);
+      const ma = Math.hypot(e.mx, e.my), mi = ma * e.rr;
+      const pts = [];
+      const a1 = e.a1, a2 = e.a2;
+      for (let i = 0; i <= samples; i++) {
+        const t = a1 + (a2 - a1) * i / samples;
+        const cx0 = ma * Math.cos(t), cy0 = mi * Math.sin(t);
+        const x = e.x + cx0 * Math.cos(mAng) - cy0 * Math.sin(mAng);
+        const y = e.y + cx0 * Math.sin(mAng) + cy0 * Math.cos(mAng);
+        pts.push(`${x},${y}`);
+      }
+      const pl = document.createElementNS(ns, 'polyline');
+      pl.setAttribute('points', pts.join(' '));
+      pl.setAttribute('stroke', stroke); pl.setAttribute('stroke-width', sw);
+      pl.setAttribute('fill', 'none');
+      pl.setAttribute('vector-effect', 'non-scaling-stroke');
+      parent.append(pl);
+      break;
+    }
+    case 'polyline':
+    case 'spline': {
+      if (!e.pts || e.pts.length === 0) break;
+      const pts = e.pts.map(([x, y]) => `${x},${y}`).join(' ');
+      const tag = e.closed ? 'polygon' : 'polyline';
+      const p = document.createElementNS(ns, tag);
+      p.setAttribute('points', pts);
+      p.setAttribute('stroke', stroke); p.setAttribute('stroke-width', sw);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('vector-effect', 'non-scaling-stroke');
+      parent.append(p);
+      break;
+    }
+    case 'text': {
+      // SVG text is in world coords; we counter-flip Y so text reads upright.
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('transform',
+        `translate(${e.x} ${e.y}) scale(1 -1) rotate(${-(e.rot*180/Math.PI)})`);
+      const t = document.createElementNS(ns, 'text');
+      t.setAttribute('x', '0'); t.setAttribute('y', '0');
+      t.setAttribute('font-size', e.h);
+      t.setAttribute('fill', stroke);
+      // Strip simple MText format codes: {\\f...;TEXT}, \\P, \\L, \\l
+      const stripped = (e.s || '').replace(/\{\\[^;]+;([^}]*)\}/g, '$1')
+                                  .replace(/\\P/g, ' / ')
+                                  .replace(/\\[lL]/g, '');
+      t.textContent = stripped;
+      g.append(t);
+      parent.append(g);
+      break;
+    }
+    case 'bref': {
+      // We don't have the block definition expanded — render an X + name.
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('transform',
+        `translate(${e.x} ${e.y}) rotate(${(e.rot*180/Math.PI)}) scale(${e.sx} ${e.sy})`);
+      const a = 1.5;
+      for (const [x1, y1, x2, y2] of [[-a,-a,a,a],[-a,a,a,-a]]) {
+        const ln = document.createElementNS(ns, 'line');
+        ln.setAttribute('x1', x1); ln.setAttribute('y1', y1);
+        ln.setAttribute('x2', x2); ln.setAttribute('y2', y2);
+        ln.setAttribute('stroke', stroke); ln.setAttribute('stroke-width', sw);
+        ln.setAttribute('vector-effect', 'non-scaling-stroke');
+        g.append(ln);
+      }
+      parent.append(g);
+      // Label
+      const txt = document.createElementNS(ns, 'g');
+      txt.setAttribute('transform', `translate(${e.x + 1} ${e.y + 1}) scale(1 -1)`);
+      const t = document.createElementNS(ns, 'text');
+      t.setAttribute('class', 'lbl-bref');
+      t.setAttribute('font-size', 1.2);
+      t.setAttribute('fill', stroke);
+      t.textContent = e.name || '?';
+      txt.append(t);
+      parent.append(txt);
+      break;
+    }
+    case 'hatch': {
+      if (e.loops && e.loops.length) {
+        for (const loop of e.loops) {
+          if (!loop || loop.length < 2) continue;
+          const path = document.createElementNS(ns, 'polygon');
+          path.setAttribute('points', loop.map(([x, y]) => `${x},${y}`).join(' '));
+          path.setAttribute('fill', stroke); path.setAttribute('fill-opacity', '.18');
+          path.setAttribute('stroke', stroke); path.setAttribute('stroke-width', sw);
+          path.setAttribute('vector-effect', 'non-scaling-stroke');
+          parent.append(path);
+        }
+      } else if (e.x != null) {
+        // Legacy v1 dumps had no loops; show a marker.
+        const r = document.createElementNS(ns, 'circle');
+        r.setAttribute('cx', e.x); r.setAttribute('cy', e.y);
+        r.setAttribute('r', 0.5);
+        r.setAttribute('fill', stroke); r.setAttribute('opacity', '.4');
+        parent.append(r);
+      }
+      break;
+    }
+    case 'point': {
+      const r = document.createElementNS(ns, 'circle');
+      r.setAttribute('cx', e.x); r.setAttribute('cy', e.y);
+      r.setAttribute('r', sw * 2);
+      r.setAttribute('fill', stroke);
+      parent.append(r);
+      break;
+    }
+    case 'unknown':
+    default:
+      // skip
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pan / zoom
+// ---------------------------------------------------------------------------
+function bindInteractions(svg) {
+  let panning = false;
+  let lastX = 0, lastY = 0;
+
+  svg.addEventListener('mousedown', (e) => {
+    panning = true; lastX = e.clientX; lastY = e.clientY; e.preventDefault();
+  });
+  window.addEventListener('mouseup', () => panning = false);
+  window.addEventListener('mousemove', (e) => {
+    if (!panning) return;
+    view.tx += (e.clientX - lastX);
+    view.ty += (e.clientY - lastY);
+    lastX = e.clientX; lastY = e.clientY;
+    applyTransform();
+  });
+
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const k = Math.pow(1.0015, -e.deltaY);
+    // Zoom about cursor: keep world-point under cursor stable.
+    view.tx = px - (px - view.tx) * k;
+    view.ty = py - (py - view.ty) * k;
+    view.s *= k;
+    applyTransform();
+  }, { passive: false });
+}
+
+// ---------------------------------------------------------------------------
+// Fit-to-extents
+// ---------------------------------------------------------------------------
+function fit() {
+  if (!data) return;
+  const ext = data.extents || computeExtents();
+  if (!ext) return;
+  const [xmin, ymin, xmax, ymax] = ext;
+  const dx = xmax - xmin, dy = ymax - ymin;
+  const wr = wrap.getBoundingClientRect();
+  const W = wr.width, H = wr.height;
+  const pad = 0.95;
+  const sx = (W * pad) / dx, sy = (H * pad) / dy;
+  view.s = Math.min(sx, sy);
+  // Center: world-center maps to (W/2, H/2). With y-flip:
+  //   screen_x = tx + s * x_world
+  //   screen_y = ty - s * y_world
+  view.tx = W / 2 - view.s * (xmin + xmax) / 2;
+  view.ty = H / 2 + view.s * (ymin + ymax) / 2;
+  render();
+}
+
+function computeExtents() {
+  let xmin =  Infinity, ymin =  Infinity;
+  let xmax = -Infinity, ymax = -Infinity;
+  for (const e of data.entities) {
+    const consider = (x, y) => {
+      if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+      if (y < ymin) ymin = y; if (y > ymax) ymax = y;
+    };
+    switch (e.t) {
+      case 'line':   consider(e.x1, e.y1); consider(e.x2, e.y2); break;
+      case 'circle':
+      case 'arc':    consider(e.x - e.r, e.y - e.r); consider(e.x + e.r, e.y + e.r); break;
+      case 'ellipse':consider(e.x - 1, e.y - 1); consider(e.x + 1, e.y + 1); break;
+      case 'polyline':
+      case 'spline': for (const [x, y] of e.pts) consider(x, y); break;
+      case 'text':
+      case 'bref':
+      case 'point':  consider(e.x, e.y); break;
+    }
+  }
+  if (!isFinite(xmin)) return null;
+  return [xmin, ymin, xmax, ymax];
+}
+</script>
+
+</body>
+</html>
