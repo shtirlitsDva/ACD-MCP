@@ -109,13 +109,7 @@ namespace Acd.Mcp.Batch.Tests.Fakes
             if (LockedPaths.Contains(path))
                 throw new IOException($"Simulated lock on '{path}'.");
             LeasedPaths.Add(path);
-
-            // The FileLease wraps a FileStream. To keep tests fast we point
-            // the stream at a temp file we create on demand. The real
-            // FileLease just needs an IDisposable handle.
-            var temp = System.IO.Path.GetTempFileName();
-            var stream = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return new FileLease(path, stream);
+            return new FileLease(path);
         }
     }
 }
