@@ -78,6 +78,10 @@ ACD-MCP ships as a Claude Code plugin that doubles as a portable folder. The sam
 
    Pass `-Clients codex,copilot` to target specific clients, or `-Clients none -SkipBundle` to skip everything (rare).
 
+   The installer prefers each client's official CLI (`codex mcp add`, `code --add-mcp`) and falls back to direct config-file edits only when the CLI isn't on PATH. Re-runs are idempotent — entries are updated in place, not duplicated.
+
+   > **Note**: Run the installer from the **extracted release zip**, not from inside a Claude Code plugin cache (`~/.claude/plugins/cache/acd-mcp@*/`). Plugin cache paths change on every plugin update, so any MCP entry registered with a cache path would break on the next update. Claude Code users should run `Install-AcdMcp.ps1 -Clients none` from the cache for the bundle-only deploy, since `/plugin install` already wired Claude Code's MCP for them.
+
 4. **Restart your AI client(s)** so they pick up the new MCP server.
 
 ### Claude Code (the shorter path)
