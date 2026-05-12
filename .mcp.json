@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "acd-mcp": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe"
+    }
+  }
+}

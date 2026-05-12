@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AutoCAD ApplicationPlugin bundle manifest for ACD-MCP.
+
+  Drop this folder into %APPDATA%\Autodesk\ApplicationPlugins\ to autoload
+  Acd.Mcp.dll on AutoCAD startup. AppVersion is read by the installer to
+  decide whether to overwrite (downgrade is refused unless -Force).
+
+  Update AppVersion in lockstep with .claude-plugin/plugin.json's "version"
+  so the two surfaces (Claude plugin update + AutoCAD bundle update) stay
+  in sync.
+-->
+<ApplicationPackage SchemaVersion="1.0"
+                    AutodeskProduct="AutoCAD"
+                    Name="ACD-MCP"
+                    AppVersion="0.1.0"
+                    ProductCode="{B7F5E8D4-3C29-4A1B-9F8E-2D6C7E4B5A93}"
+                    Author="Damgaard RI"
+                    Description="Live C# REPL + multi-file batch runner exposed as an MCP server."
+                    UpgradeCode="{B7F5E8D4-3C29-4A1B-9F8E-2D6C7E4B5A93}"
+                    Icon=""
+                    HelpFile="">
+
+  <CompanyDetails Name="Damgaard RI"
+                  Url="https://github.com/shtirlitsDva/ACD-MCP"
+                  Email=""/>
+
+  <Components Description="x64 AutoCAD 2025+">
+    <RuntimeRequirements OS="Win64"
+                         Platform="AutoCAD*"
+                         SeriesMin="R25.0"
+                         SeriesMax="R26.0"/>
+
+    <ComponentEntry AppName="ACD-MCP"
+                    ModuleName="./Contents/Acd.Mcp.dll"
+                    AppDescription="ACD-MCP plugin: C# REPL + batch runner"
+                    LoadOnAutoCADStartup="True"
+                    LoadOnCommandInvocation="False"
+                    LoadReasonOnCommandInvocation="DemandLoad"/>
+  </Components>
+</ApplicationPackage>

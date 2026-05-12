@@ -1,5 +1,5 @@
 ---
-name: acd-mcp-add-dto
+name: add-dto
 description: Author or override a DTO that teaches the ACD-MCP serializer how to project an AutoCAD entity type to JSON. Triggers when the MCP returns {"$unsupported":"<type>"}, when a default DTO's shape is insufficient, or when the user asks "add a DTO for X".
 ---
 

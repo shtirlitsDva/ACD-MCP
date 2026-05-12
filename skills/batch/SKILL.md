@@ -1,5 +1,5 @@
 ---
-name: acd-batch
+name: batch
 description: |
   Author and iterate batch C# scripts that mutate many AutoCAD drawings via the
   ACD-MCP plugin. Use when the user wants to apply the same change across a

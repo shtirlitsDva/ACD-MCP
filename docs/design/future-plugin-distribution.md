@@ -7,7 +7,28 @@ ACD-MCP product (existing MCP + future batch + future skills) ships to
 end users across multiple AI clients.
 -->
 
-<status>idea / spec — not implemented, not scheduled, not assigned</status>
+<status>
+**Implemented (v0.1.0).** Live files supersede the spec below:
+
+- Plugin manifest — `.claude-plugin/plugin.json`
+- Plugin MCP wiring — `.mcp.json`
+- Skills — `skills/start/`, `skills/batch/`, `skills/add-dto/`
+- AutoCAD bundle structure — `autocad-bundle/ACD-MCP.bundle/PackageContents.xml`
+- Installer (second-path for Codex / Copilot / Claude Desktop, + AutoCAD bundle deploy for all clients) — `install-hooks/Install-AcdMcp.ps1`
+- Uninstaller — `install-hooks/Uninstall-AcdMcp.ps1`
+- Release builder — `scripts/Build-Release.ps1`
+- CI for AutoCAD-free parts — `.github/workflows/ci.yml`
+- README install section — see top-level README.
+
+Deferred from this v1 (still worth doing if/when the project goes public):
+- Marketplace.json for `/plugin marketplace add` flow (currently relies on git-URL marketplace discovery).
+- Code-signing for `Acd.Mcp.Bridge.exe` to silence SmartScreen on Windows.
+- Auto-update path that probes GitHub Releases for newer plugin versions.
+
+The original design notes below are kept for historical context.
+</status>
+
+<original-status>idea / spec — not implemented, not scheduled, not assigned</original-status>
 
 <scope>
 How ACD-MCP ships to end users as **one installable thing** that supports

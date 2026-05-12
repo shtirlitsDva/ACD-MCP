@@ -1,0 +1,10 @@
+# Contents/ is populated by scripts/Build-Release.ps1 from
+# src/Acd.Mcp/bin/Release/. The build outputs (Acd.Mcp.dll + transitive
+# deps such as Acd.Mcp.Api.dll, Acd.Mcp.Batch.dll, AvalonEdit.dll,
+# CommunityToolkit.Mvvm.dll, and the Roslyn scripting DLLs) end up here.
+#
+# This .gitkeep keeps the folder shape in source control so the bundle
+# layout is reviewable. The actual binaries are never committed — they
+# come from a Release build on a machine with AutoCAD 2025 installed
+# (because Acd.Mcp.dll references AutoCAD's managed APIs at compile
+# time).
