@@ -16,11 +16,14 @@ namespace Acd.Mcp.Serialization
     {
         private readonly DtoRegistry _registry;
         private readonly IDtoReloadTrigger _reload;
+        private readonly DtoDiagnostics? _diagnostics;
 
-        public DtoConverterFactory(DtoRegistry registry, IDtoReloadTrigger? reload = null)
+        public DtoConverterFactory(DtoRegistry registry, IDtoReloadTrigger? reload = null,
+            DtoDiagnostics? diagnostics = null)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _reload = reload ?? NoopReloadTrigger.Instance;
+            _diagnostics = diagnostics;
         }
 
         public override bool CanConvert(Type typeToConvert)
@@ -33,7 +36,7 @@ namespace Acd.Mcp.Serialization
         public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
         {
             var converterType = typeof(DtoConverter<>).MakeGenericType(typeToConvert);
-            return (JsonConverter)Activator.CreateInstance(converterType, _registry, _reload)!;
+            return (JsonConverter)Activator.CreateInstance(converterType, _registry, _reload, _diagnostics!)!;
         }
 
         internal static bool IsAcadType(Type t)
@@ -49,11 +52,13 @@ namespace Acd.Mcp.Serialization
     {
         private readonly DtoRegistry _registry;
         private readonly IDtoReloadTrigger _reload;
+        private readonly DtoDiagnostics? _diagnostics;
 
-        public DtoConverter(DtoRegistry registry, IDtoReloadTrigger reload)
+        public DtoConverter(DtoRegistry registry, IDtoReloadTrigger reload, DtoDiagnostics? diagnostics)
         {
             _registry = registry;
             _reload = reload;
+            _diagnostics = diagnostics;
         }
 
         public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
@@ -81,9 +86,24 @@ namespace Acd.Mcp.Serialization
             }
 
             // Still unresolved — emit the marker that signals the agent it
-            // needs to author a DTO (or ask the user to).
+            // needs to author a DTO (or ask the user to). If a DTO file
+            // for this type recently failed to compile, surface the
+            // diagnostic inline so the agent can fix it without reading
+            // the SafeBoundary log. See /acd-mcp:add-dto <verify-do-not-guess>.
             writer.WriteStartObject();
             writer.WriteString("$unsupported", runtimeType.FullName ?? runtimeType.Name);
+            var fail = _diagnostics?.TryGet(runtimeType);
+            if (fail is not null)
+            {
+                var loc = (fail.Line, fail.Column) switch
+                {
+                    (int l, int c) => $" ({l},{c})",
+                    _ => "",
+                };
+                var code = string.IsNullOrEmpty(fail.ErrorCode) ? "" : $" {fail.ErrorCode}:";
+                writer.WriteString("reason",
+                    $"compile error in {fail.Source}{loc}:{code} {fail.Message}".Trim());
+            }
             writer.WriteEndObject();
         }
 

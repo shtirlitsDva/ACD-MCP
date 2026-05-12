@@ -25,14 +25,16 @@ namespace Acd.Mcp.Serialization
     {
         private readonly DtoRegistry _registry;
         private readonly DtoDataProviderApi _dataProvider;
+        private readonly DtoDiagnostics _diagnostics;
         private readonly Dictionary<string, DateTime> _mtimes = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _gate = new();
         private ScriptOptions? _options;
 
-        public DtoLoader(DtoRegistry registry, DtoDataProviderApi dataProvider)
+        public DtoLoader(DtoRegistry registry, DtoDataProviderApi dataProvider, DtoDiagnostics diagnostics)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _dataProvider = dataProvider ?? throw new ArgumentNullException(nameof(dataProvider));
+            _diagnostics = diagnostics ?? throw new ArgumentNullException(nameof(diagnostics));
         }
 
         // Wipe and re-populate from scratch. Use on plugin startup and any
@@ -43,6 +45,7 @@ namespace Acd.Mcp.Serialization
             lock (_gate)
             {
                 _registry.Clear();
+                _diagnostics.Clear();
                 _mtimes.Clear();
                 CompileFolder(DtoPaths.SystemFolder, "system");
                 CompileFolder(DtoPaths.UserFolder, "user");
@@ -87,6 +90,17 @@ namespace Acd.Mcp.Serialization
             }
 
             var sourceTag = $"{tag}:{Path.GetFileName(path)}";
+
+            // Parse the @dto header so a compile failure can be keyed by
+            // the type the file was *meant* to register (the converter
+            // looks up failures by Type to enrich the $unsupported marker).
+            // The header is documentation per DtoHeader's contract; the
+            // body's RegisterDto<T> is the source of truth on success.
+            var headerType = DtoHeader.TryParse(source) ?? "";
+            Type? resolvedType = string.IsNullOrEmpty(headerType)
+                ? null
+                : ResolveType(headerType);
+
             var api = new DtoRegistrationApi(_registry, _dataProvider, sourceTag);
             var globals = new DtoRegistrationGlobals(api);
 
@@ -94,15 +108,50 @@ namespace Acd.Mcp.Serialization
             {
                 CSharpScript.RunAsync(source, GetOptions(), globals, typeof(DtoRegistrationGlobals))
                     .GetAwaiter().GetResult();
+                // Clear any prior diagnostic for this source on successful compile.
+                _diagnostics.ClearForSource(sourceTag);
             }
             catch (CompilationErrorException cex)
             {
+                var (line, col, code, msg) = DtoDiagnostics.ParseFirstDiagnostic(cex.Message);
+                _diagnostics.RecordFailure(new DtoCompileFailure(
+                    Source: sourceTag,
+                    HeaderType: headerType,
+                    ResolvedType: resolvedType,
+                    Message: msg,
+                    Line: line,
+                    Column: col,
+                    ErrorCode: code));
                 SafeBoundary.Info("DtoLoader", $"Compile error in {sourceTag}: {cex.Message}");
             }
             catch (Exception ex)
             {
+                _diagnostics.RecordFailure(new DtoCompileFailure(
+                    Source: sourceTag,
+                    HeaderType: headerType,
+                    ResolvedType: resolvedType,
+                    Message: ex.Message,
+                    Line: null,
+                    Column: null,
+                    ErrorCode: ex.GetType().Name));
                 SafeBoundary.Info("DtoLoader", $"Runtime error in {sourceTag}: {ex.Message}");
             }
+        }
+
+        // Resolve a type name to a Type via every loaded AppDomain assembly.
+        // Returns null on miss — `$unsupported.reason` then carries the
+        // failure keyed by source tag only (the diagnostics resource still
+        // surfaces it, just without a Type-based lookup path).
+        private static Type? ResolveType(string fullName)
+        {
+            var t = Type.GetType(fullName, throwOnError: false);
+            if (t is not null) return t;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                t = asm.GetType(fullName, throwOnError: false);
+                if (t is not null) return t;
+            }
+            return null;
         }
 
         private ScriptOptions GetOptions()

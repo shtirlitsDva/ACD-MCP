@@ -47,9 +47,14 @@ namespace Acd.Mcp
 
         // DTO graph. Built once in TryEnsureCore; the same registry feeds both
         // the JsonSerializerOptions (passed to ScriptSession) and the loader
-        // (called for ReloadAll / Refresh).
+        // (called for ReloadAll / Refresh). _dtoDiagnostics is shared with
+        // the DtoConverter so the $unsupported marker can carry compile-
+        // error context inline, and with _dtoRpc so the agent can also
+        // query the full list via acd-mcp://dto-system/diagnostics.
         private static DtoRegistry? _dtoRegistry;
         private static DtoLoader? _dtoLoader;
+        private static DtoDiagnostics? _dtoDiagnostics;
+        private static DtoRpcHandler? _dtoRpc;
         private static JsonSerializerOptions? _dtoJsonOptions;
 
         public void Initialize()
@@ -97,6 +102,8 @@ namespace Acd.Mcp
             _mainSync = null;
             _dtoLoader = null;
             _dtoRegistry = null;
+            _dtoDiagnostics = null;
+            _dtoRpc = null;
             _dtoJsonOptions = null;
             SafeBoundary.Info("Terminate", $"{Version}");
             SafeBoundary.Run("McpPlugin.Terminate/echo", () => EditorMessage($"[ACD-MCP] Terminate() {Version}"));
@@ -126,7 +133,7 @@ namespace Acd.Mcp
             // The batch RPC handler needs a IBatchUiState provider; until the
             // palette is opened we fall back to an empty stub so agent calls
             // that depend on UI state fail loudly with a clear message.
-            _listener ??= new PipeListener(_executor!, BatchRpcMethodHandler);
+            _listener ??= new PipeListener(_executor!, ExtraRpcMethodHandler);
             _listener.Start();
             EditorMessage($"[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.");
         });
@@ -181,16 +188,27 @@ namespace Acd.Mcp
             _palette.Visible = true;
         });
 
-        // Listener-side dispatch for batch.* methods. The actual handler is
-        // re-pointed when the palette opens; before then, only a stub that
-        // returns a "palette not open" error is in use.
-        private static Task<object?> BatchRpcMethodHandler(string method, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken ct)
+        // Listener-side method dispatch. Two prefixes are handled here:
+        //   batch.* — routed to _batchRpc (requires the palette to be open).
+        //   dto.*   — routed to _dtoRpc   (always available once the DTO
+        //             graph is built; doesn't need the palette).
+        private static Task<object?> ExtraRpcMethodHandler(string method, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken ct)
         {
-            if (!method.StartsWith("batch.")) return Task.FromResult<object?>(null);
-            if (_batchRpc is null)
-                throw new InvalidOperationException(
-                    "BATCH palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
-            return _batchRpc.DispatchAsync(method, parameters, ct);
+            if (method.StartsWith("batch."))
+            {
+                if (_batchRpc is null)
+                    throw new InvalidOperationException(
+                        "BATCH palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
+                return _batchRpc.DispatchAsync(method, parameters, ct);
+            }
+            if (method.StartsWith("dto."))
+            {
+                if (_dtoRpc is null)
+                    throw new InvalidOperationException(
+                        "DTO graph is not initialised yet. Run ACDMCP_START inside AutoCAD first.");
+                return _dtoRpc.DispatchAsync(method, parameters, ct);
+            }
+            return Task.FromResult<object?>(null);
         }
 
         // Lazy-init the in-process core. Returns false with a human-readable
@@ -233,12 +251,14 @@ namespace Acd.Mcp
             DtoSystemSeeder.Seed();
 
             _dtoRegistry = new DtoRegistry();
+            _dtoDiagnostics = new DtoDiagnostics();
             var providers = EntityDataProviders.CreateDefault();
             var providerApi = new DtoDataProviderApi(providers);
-            _dtoLoader = new DtoLoader(_dtoRegistry, providerApi);
+            _dtoLoader = new DtoLoader(_dtoRegistry, providerApi, _dtoDiagnostics);
 
             var reload = new DtoReloadTrigger(_dtoLoader);
-            _dtoJsonOptions = AcadDtoOptions.Build(_dtoRegistry, reload);
+            _dtoJsonOptions = AcadDtoOptions.Build(_dtoRegistry, reload, _dtoDiagnostics);
+            _dtoRpc = new DtoRpcHandler(_dtoDiagnostics);
 
             _dtoLoader.ReloadAll();
 

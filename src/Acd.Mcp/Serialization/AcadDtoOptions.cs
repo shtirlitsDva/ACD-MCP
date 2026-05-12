@@ -12,7 +12,9 @@ namespace Acd.Mcp.Serialization
     // builder so both sides see the same converter table.
     public static class AcadDtoOptions
     {
-        public static JsonSerializerOptions Build(DtoRegistry registry, IDtoReloadTrigger? reload = null)
+        public static JsonSerializerOptions Build(DtoRegistry registry,
+            IDtoReloadTrigger? reload = null,
+            DtoDiagnostics? diagnostics = null)
         {
             var options = new JsonSerializerOptions
             {
@@ -28,7 +30,7 @@ namespace Acd.Mcp.Serialization
                 // friendlier to an agent than raw integers.
                 Converters = { new JsonStringEnumConverter() },
             };
-            options.Converters.Add(new DtoConverterFactory(registry, reload));
+            options.Converters.Add(new DtoConverterFactory(registry, reload, diagnostics));
             return options;
         }
     }

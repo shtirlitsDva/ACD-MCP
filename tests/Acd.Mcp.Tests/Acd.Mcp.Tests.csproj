@@ -22,6 +22,7 @@
     <Compile Include="..\..\src\Acd.Mcp\Serialization\IDtoReloadTrigger.cs" Link="Sut\IDtoReloadTrigger.cs" />
     <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoConverterFactory.cs" Link="Sut\DtoConverterFactory.cs" />
     <Compile Include="..\..\src\Acd.Mcp\Serialization\AcadDtoOptions.cs" Link="Sut\AcadDtoOptions.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoDiagnostics.cs" Link="Sut\DtoDiagnostics.cs" />
   </ItemGroup>
 
   <!-- Outcome<T> now lives in Acd.Mcp.Batch (pure net8.0 — references safely). -->
