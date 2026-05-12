@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AssemblyName>Acd.Mcp.Api</AssemblyName>
+    <RootNamespace>Acd.Mcp.Api</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <!-- Public surface that REPL submissions bind against. Must live in the
+       host's default ALC so submission assemblies (loaded into Roslyn's own
+       _inMemoryAssemblyContext) don't reach back into the isolated plugin
+       ALC at runtime. The bootstrap responsibility falls on DevReload's
+       WithSharedAssemblies("Acd.Mcp.Api") in DEBUG, and on AutoCAD's
+       standard plugin probing in production. Keep this assembly small and
+       stable — every change forces an AutoCAD restart in dev. -->
+
+  <PropertyGroup Condition=" '$(Platform)' == 'x64' ">
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- AutoCAD managed APIs. Private=False because AutoCAD provides
+         these at runtime — copying them into the plugin folder would cause
+         load failures (duplicate type identity). -->
+    <Reference Include="accoremgd">
+      <HintPath>$(AutoCADPath)\accoremgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="acdbmgd">
+      <HintPath>$(AutoCADPath)\acdbmgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- acmgd carries Autodesk.AutoCAD.ApplicationServices.Application (the
+         static type whose DocumentManager.MdiActiveDocument we re-resolve
+         on every Doc/Db/Ed read). Document/Database/Editor themselves are
+         in accoremgd/acdbmgd above. -->
+    <Reference Include="acmgd">
+      <HintPath>$(AutoCADPath)\acmgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

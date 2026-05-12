@@ -49,6 +49,17 @@
     <!-- AutoCAD-free runtime. Plugin provides the AutoCAD-bound host and
          session; runtime owns the loop, Outcome union, step DSL, history. -->
     <ProjectReference Include="..\Acd.Mcp.Batch\Acd.Mcp.Batch.csproj" />
+
+    <!-- Acd.Mcp.Api carries AcadGlobals (the REPL globalsType). It must end up
+         in the default ALC, not the plugin's isolated ALC, so submission
+         assemblies don't pin the isolated ALC across hot-reloads. Under
+         DevReload that means adding "Acd.Mcp.Api" to the registration's
+         WithSharedAssemblies(...) list — PluginManager.LoadCore then
+         Assembly.LoadFrom's the side-by-side DLL into the default ALC before
+         the plugin loads. The shared-name check in IsolatedPluginContext.Load
+         fires before the deps.json resolver, so Private=True (default —
+         needed for the side-by-side copy) is harmless. -->
+    <ProjectReference Include="..\Acd.Mcp.Api\Acd.Mcp.Api.csproj" />
   </ItemGroup>
 
   <PropertyGroup Condition=" '$(Platform)' == 'x64' ">
