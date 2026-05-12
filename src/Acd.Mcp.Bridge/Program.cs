@@ -16,7 +16,8 @@ builder.Services.AddSingleton(new AcadClient(explicitPid));
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly()
+    .WithResourcesFromAssembly();
 
 await builder.Build().RunAsync();
 

@@ -99,6 +99,8 @@ namespace Acd.Mcp.Batch.Tests
             Assert.Same(a, b);
         }
 
+#pragma warning disable CS0649  // Field is never assigned — the test only checks reference equality.
         private sealed class TestCounter { public int Next; }
+#pragma warning restore CS0649
     }
 }
