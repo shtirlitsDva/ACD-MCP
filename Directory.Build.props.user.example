@@ -1,0 +1,7 @@
+<!-- Copy this file to Directory.Build.props.user and set your AutoCAD path.
+     Directory.Build.props.user is git-ignored so your local path won't be committed. -->
+<Project>
+  <PropertyGroup>
+    <AutoCADPath>C:\Program Files\Autodesk\AutoCAD 2025</AutoCADPath>
+  </PropertyGroup>
+</Project>

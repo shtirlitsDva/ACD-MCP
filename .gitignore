@@ -1,0 +1,87 @@
+## .NET / Visual Studio
+
+# Local scratch folder
+.scratch/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+bld/
+artifacts/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+Generated\ Files/
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# Publish profiles
+*.pubxml
+*.pubxml.user
+PublishScripts/
+
+# Build artifacts
+*.ilk
+*.pdb
+*.ipdb
+*.pgc
+*.pgd
+*.rsp
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*.log
+*.vspscc
+*.vssscc
+*.pidb
+*.svclog
+*.scc
+.builds
+
+# Profiler / Trace
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.e2e
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# Cache
+*.[Cc]ache
+!*.[Cc]ache/
+
+# MSBuild binary log
+*.binlog
+
+# Local user overrides (AutoCAD path)
+Directory.Build.props.user
+
+# Bundle output
+Deploy/

@@ -1,0 +1,26 @@
+<Project>
+  <PropertyGroup>
+    <!-- AutoCAD installation path.
+         Override via:
+           1. Local file: copy Directory.Build.props.user.example to
+              Directory.Build.props.user and set your path
+           2. Environment variable: set AutoCADPath=C:\path\to\AutoCAD
+           3. Command line: dotnet build -p:AutoCADPath="C:\path\to\AutoCAD" -->
+    <AutoCADPath Condition="'$(AutoCADPath)' == ''">C:\Program Files\Autodesk\AutoCAD 2025</AutoCADPath>
+
+    <!-- Common project settings (mirrors DevReload conventions). -->
+    <TargetFramework>net8.0-windows8.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <SupportedOSPlatformVersion>8.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+
+  <!-- Allow local override file (git-ignored). -->
+  <Import Project="Directory.Build.props.user"
+          Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.props.user')" />
+</Project>
