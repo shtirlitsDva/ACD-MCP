@@ -243,7 +243,7 @@ namespace Acd.Mcp.Batch.Runtime
 
     // The UI owns folder / mask / file list. The pipe queries via this
     // narrow read-only surface; the WPF view-model implements it.
-    internal interface BatchUiState
+    public interface BatchUiState
     {
         string CurrentFolder { get; }
         string CurrentMask { get; }

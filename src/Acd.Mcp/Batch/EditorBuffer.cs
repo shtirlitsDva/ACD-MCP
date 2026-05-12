@@ -14,7 +14,7 @@ namespace Acd.Mcp.Batch.Runtime
     //
     // Thread-safe: SetText can be called from the WPF dispatcher; the
     // debounce timer's callback fires on a threadpool thread.
-    internal sealed class EditorBuffer : IDisposable
+    public sealed class EditorBuffer : IDisposable
     {
         public static string DefaultPath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

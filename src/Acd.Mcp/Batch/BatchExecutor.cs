@@ -22,7 +22,7 @@ namespace Acd.Mcp.Batch.Runtime
     // The executor is constructed at McpPlugin.Initialize and torn down at
     // Terminate. It is thread-safe by virtue of the underlying components
     // and the single-active-run invariant.
-    internal sealed class BatchExecutor : IDisposable
+    public sealed class BatchExecutor : IDisposable
     {
         private readonly BatchScriptHost<AcadBatchGlobals> _scriptHost;
         private readonly AcadDrawingHost _drawingHost = new();
