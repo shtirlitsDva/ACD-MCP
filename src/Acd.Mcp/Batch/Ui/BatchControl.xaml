@@ -102,6 +102,12 @@
                 <Button Content="Run" Command="{Binding RunCommand}" Margin="0,0,6,0" MinWidth="60"/>
                 <Button Content="Cancel" Command="{Binding CancelCommand}"
                         IsEnabled="{Binding IsRunning}" Margin="0,0,12,0" MinWidth="60"/>
+                <TextBlock Text="On failure:" VerticalAlignment="Center" Margin="0,0,4,0"
+                           Style="{StaticResource Text.Secondary}"/>
+                <ComboBox ItemsSource="{Binding OnFailureOptions}"
+                          SelectedItem="{Binding OnFailure}"
+                          MinWidth="78" Margin="0,0,12,0" VerticalAlignment="Center"
+                          ToolTip="Abort: stop the batch at the first failed file (default). Skip: record the failure and continue to the next file."/>
                 <TextBlock Text="{Binding StatusLine}"
                            Style="{StaticResource Text.Secondary}"
                            VerticalAlignment="Center"/>

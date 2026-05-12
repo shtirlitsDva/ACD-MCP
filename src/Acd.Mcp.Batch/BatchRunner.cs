@@ -60,7 +60,8 @@ namespace Acd.Mcp.Batch
             BatchMode mode,
             CancellationToken ct,
             IProgress<BatchFileResult>? progress = null,
-            string? runId = null)
+            string? runId = null,
+            BatchOnFailure onFailure = BatchOnFailure.Abort)
         {
             if (body is null) throw new ArgumentNullException(nameof(body));
             if (files is null) throw new ArgumentNullException(nameof(files));
@@ -99,7 +100,7 @@ namespace Acd.Mcp.Batch
 
             var testPhase = await RunPhaseAsync(
                 script, files, BatchPhase.Test, isLive: false,
-                new BatchStateBag(), ct, progress, aggregated).ConfigureAwait(false);
+                new BatchStateBag(), ct, progress, aggregated, onFailure).ConfigureAwait(false);
 
             if (ct.IsCancellationRequested)
             {
@@ -124,7 +125,7 @@ namespace Acd.Mcp.Batch
             // Fresh bag for the Live phase. See comment above.
             await RunPhaseAsync(
                 script, files, BatchPhase.Live, isLive: true,
-                new BatchStateBag(), ct, progress, aggregated).ConfigureAwait(false);
+                new BatchStateBag(), ct, progress, aggregated, onFailure).ConfigureAwait(false);
 
             return Finish(runId, started, mode, files, aggregated,
                 cancelled: ct.IsCancellationRequested, abortedReason: null);
@@ -138,7 +139,8 @@ namespace Acd.Mcp.Batch
             BatchStateBag stateBag,
             CancellationToken ct,
             IProgress<BatchFileResult>? progress,
-            List<BatchFileResult> aggregated)
+            List<BatchFileResult> aggregated,
+            BatchOnFailure onFailure)
         {
             int failed = 0;
             foreach (var path in files)
@@ -246,6 +248,16 @@ namespace Acd.Mcp.Batch
                 if (fileResult.Status == FileOutcomeStatus.Failure) failed++;
                 aggregated.Add(fileResult);
                 progress?.Report(fileResult);
+
+                // Honour the user's On-failure choice. Default (Abort) stops
+                // the loop on the first Failure so a script that's wrong
+                // against the user's assumptions can't quietly churn through
+                // dozens of drawings.
+                if (fileResult.Status == FileOutcomeStatus.Failure &&
+                    onFailure == BatchOnFailure.Abort)
+                {
+                    break;
+                }
             }
             return new PhaseSummary(failed);
         }

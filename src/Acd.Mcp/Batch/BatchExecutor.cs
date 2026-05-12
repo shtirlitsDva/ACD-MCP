@@ -103,16 +103,16 @@ namespace Acd.Mcp.Batch.Runtime
         // The spec is explicit: the agent has no live-mode trigger; that's
         // a UI button only. So this method is hard-coded to BatchMode.Test
         // and there is no live counterpart on the executor's public surface.
-        public string StartTestRun(IReadOnlyList<string> files)
-            => StartRun(BatchMode.Test, files);
+        public string StartTestRun(IReadOnlyList<string> files, BatchOnFailure onFailure = BatchOnFailure.Abort)
+            => StartRun(BatchMode.Test, files, onFailure);
 
         // UI path: kick off a run with the user-chosen mode. Live runs
         // honour the two-phase contract (Test pass first; abort if any
-        // Test failure). Mode comes from the slide-switch.
-        public string StartRunFromUi(BatchMode mode, IReadOnlyList<string> files)
-            => StartRun(mode, files);
+        // Test failure). Mode + On-failure policy come from the palette.
+        public string StartRunFromUi(BatchMode mode, IReadOnlyList<string> files, BatchOnFailure onFailure)
+            => StartRun(mode, files, onFailure);
 
-        private string StartRun(BatchMode mode, IReadOnlyList<string> files)
+        private string StartRun(BatchMode mode, IReadOnlyList<string> files, BatchOnFailure onFailure)
         {
             CancellationTokenSource cts;
             Task<BatchRunReport> task;
@@ -125,7 +125,7 @@ namespace Acd.Mcp.Batch.Runtime
                 body = _currentScript;
                 cts = new CancellationTokenSource();
                 _activeCts = cts;
-                task = RunCoreAsync(body, files, mode, runId, cts.Token);
+                task = RunCoreAsync(body, files, mode, runId, cts.Token, onFailure);
                 _activeRun = task;
             }
             // Wire up history write + RunCompleted dispatch when the task
@@ -183,7 +183,8 @@ namespace Acd.Mcp.Batch.Runtime
             new(_drawingHost, _probe, _scriptHost);
 
         private Task<BatchRunReport> RunCoreAsync(
-            string body, IReadOnlyList<string> files, BatchMode mode, string runId, CancellationToken ct)
+            string body, IReadOnlyList<string> files, BatchMode mode, string runId, CancellationToken ct,
+            BatchOnFailure onFailure)
         {
             // We hand the runner a synchronous IProgress; the executor
             // re-publishes to FileCompleted. WPF hosts marshal back to the
@@ -196,7 +197,7 @@ namespace Acd.Mcp.Batch.Runtime
             {
                 try
                 {
-                    return await NewRunner().RunAsync(body, files, mode, ct, progress, runId)
+                    return await NewRunner().RunAsync(body, files, mode, ct, progress, runId, onFailure)
                         .ConfigureAwait(false);
                 }
                 catch (BatchAbortedException ex)

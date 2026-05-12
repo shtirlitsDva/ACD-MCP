@@ -132,8 +132,10 @@ ctx.Step(""bump"")
         }
 
         [Fact]
-        public async Task ScriptException_MarksFile_Failure_LoopContinues()
+        public async Task ScriptException_OnFailureSkip_LoopContinues_AllFilesProcessed()
         {
+            // With OnFailure = Skip the per-file Failure is recorded and the
+            // loop moves to the next file.
             var body = @"
 ctx.Step(""always-fails"")
    .Require(""yes"", () => true)
@@ -143,12 +145,34 @@ ctx.Step(""always-fails"")
             var probe = new FakeFileAccessProbe();
             var runner = NewRunner(host, probe);
 
-            var report = await runner.RunAsync(body, new[] { "a.dwg", "b.dwg" }, BatchMode.Test, CancellationToken.None);
+            var report = await runner.RunAsync(body, new[] { "a.dwg", "b.dwg" }, BatchMode.Test,
+                CancellationToken.None, onFailure: BatchOnFailure.Skip);
 
             Assert.Equal(2, report.Results.Count);
             Assert.All(report.Results, r => Assert.Equal(FileOutcomeStatus.Failure, r.Status));
-            // No file was committed (we're in Test anyway, but be explicit).
             Assert.All(host.OpenedSessions, s => Assert.False(s.CommittedAndSaved));
+        }
+
+        [Fact]
+        public async Task ScriptException_OnFailureAbort_LoopStopsAfterFirstFailure()
+        {
+            // Default policy: Abort. The first file fails and the runner
+            // does not even open the second.
+            var body = @"
+ctx.Step(""always-fails"")
+   .Apply(() => { throw new System.InvalidOperationException(""boom""); });
+";
+            var host = HostWithLayer("a.dwg", "b.dwg");
+            var probe = new FakeFileAccessProbe();
+            var runner = NewRunner(host, probe);
+
+            var report = await runner.RunAsync(body, new[] { "a.dwg", "b.dwg" }, BatchMode.Test,
+                CancellationToken.None /* default onFailure = Abort */);
+
+            Assert.Single(report.Results);
+            Assert.Equal("a.dwg", report.Results[0].Path);
+            Assert.Equal(FileOutcomeStatus.Failure, report.Results[0].Status);
+            Assert.Single(host.OpenedSessions);
         }
 
         [Fact]

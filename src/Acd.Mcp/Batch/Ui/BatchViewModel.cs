@@ -67,6 +67,15 @@ namespace Acd.Mcp.Batch.Ui
         [ObservableProperty] private bool _liveSelected;
         [ObservableProperty] private string _statusLine = "";
 
+        // On-failure policy — the user picks Abort | Skip from the palette
+        // ComboBox. Defaults to Abort: a script wrong against the user's
+        // assumptions should stop the loop, not silently fail N drawings.
+        [ObservableProperty] private BatchOnFailure _onFailure = BatchOnFailure.Abort;
+
+        // ComboBox ItemsSource. Computed once; the enum values never change.
+        public IReadOnlyList<BatchOnFailure> OnFailureOptions { get; } =
+            (BatchOnFailure[])Enum.GetValues(typeof(BatchOnFailure));
+
         public ObservableCollection<BatchFileResultViewModel> Results { get; } = new();
         public ObservableCollection<string> Files { get; } = new();
 
@@ -76,6 +85,7 @@ namespace Acd.Mcp.Batch.Ui
         string IBatchUiState.CurrentMask => Mask;
         bool IBatchUiState.Recurse => Recurse;
         IReadOnlyList<string> IBatchUiState.CurrentSelection => Files.ToArray();
+        BatchOnFailure IBatchUiState.OnFailure => OnFailure;
 
         public BatchViewModel(BatchExecutor executor)
         {
@@ -145,7 +155,7 @@ namespace Acd.Mcp.Batch.Ui
             Results.Clear();
             IsRunning = true;
             var mode = LiveSelected ? BatchMode.Live : BatchMode.Test;
-            _executor.StartRunFromUi(mode, Files.ToArray());
+            _executor.StartRunFromUi(mode, Files.ToArray(), OnFailure);
         });
 
         private bool CanRun() => !IsRunning;

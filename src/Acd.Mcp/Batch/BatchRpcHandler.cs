@@ -101,7 +101,7 @@ namespace Acd.Mcp.Batch.Runtime
             // before the worker task even starts). The agent polls
             // acd-mcp://batch-runs/<run_id> for THAT specific run, so a
             // concurrent UI Live run can't be mistaken for the agent's test.
-            var runId = _executor.StartTestRun(files);
+            var runId = _executor.StartTestRun(files, _uiState.OnFailure);
 
             return Task.FromResult<object>(new
             {
@@ -194,6 +194,7 @@ namespace Acd.Mcp.Batch.Runtime
                 recurse = _uiState.Recurse,
                 files = sel,
                 count = sel.Count,
+                on_failure = _uiState.OnFailure.ToString(),
             };
         }
 
@@ -230,13 +231,15 @@ namespace Acd.Mcp.Batch.Runtime
         }
     }
 
-    // The UI owns folder / mask / file list. The pipe queries via this
-    // narrow read-only surface; the WPF view-model implements it.
+    // The UI owns folder / mask / file list + on-failure policy. The pipe
+    // queries via this narrow read-only surface; the WPF view-model
+    // implements it.
     public interface IBatchUiState
     {
         string CurrentFolder { get; }
         string CurrentMask { get; }
         bool Recurse { get; }
         IReadOnlyList<string> CurrentSelection { get; }
+        BatchOnFailure OnFailure { get; }
     }
 }
