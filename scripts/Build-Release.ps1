@@ -207,5 +207,7 @@ Write-Host "Users install with one of:" -ForegroundColor White
 Write-Host "  Claude Code: /plugin marketplace add https://github.com/shtirlitsDva/ACD-MCP"
 Write-Host "               /plugin install acd-mcp@acd-mcp                 # uses committed bin/"
 Write-Host "               claude --plugin-url <release-zip-url>           # one-off, from release zip"
-Write-Host "  Others:      Download zip, extract, run install-hooks\Install-AcdMcp.ps1"
+Write-Host "  Others:      Download zip, extract, then:"
+Write-Host "                 pwsh install-hooks\Install-Bundle.ps1   # AutoCAD bundle"
+Write-Host "                 pwsh install-hooks\Install-Mcp.ps1      # Codex/Copilot/Claude Desktop"
 Write-Host ""

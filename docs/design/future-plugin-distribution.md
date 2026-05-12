@@ -14,8 +14,10 @@ end users across multiple AI clients.
 - Plugin MCP wiring — `.mcp.json`
 - Skills — `skills/start/`, `skills/batch/`, `skills/add-dto/`
 - AutoCAD bundle structure — `autocad-bundle/ACD-MCP.bundle/PackageContents.xml`
-- Installer (second-path for Codex / Copilot / Claude Desktop, + AutoCAD bundle deploy for all clients) — `install-hooks/Install-AcdMcp.ps1`
-- Uninstaller — `install-hooks/Uninstall-AcdMcp.ps1`
+- Bundle installer (AutoCAD plugin DLLs into %APPDATA%\Autodesk\ApplicationPlugins\) — `install-hooks/Install-Bundle.ps1`
+- MCP-client installer (Codex / Copilot / Claude Desktop registration; Claude Code uses /plugin install) — `install-hooks/Install-Mcp.ps1`
+- Bundle uninstaller (with optional -Purge of user content) — `install-hooks/Uninstall-Bundle.ps1`
+- MCP-client uninstaller — `install-hooks/Uninstall-Mcp.ps1`
 - Release builder — `scripts/Build-Release.ps1`
 - CI for the full solution (AutoCAD + Civil 3D refs via NuGet) + auto-publish on tag push — `.github/workflows/ci.yml`
 - README install section — see top-level README.

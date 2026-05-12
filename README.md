@@ -55,15 +55,25 @@ ACD-MCP ships as a Claude Code plugin that doubles as a portable folder. The sam
 
 ### One-time setup
 
+Install is two independent scripts. Run **both** the first time on any machine; thereafter run whichever side you need to refresh.
+
 1. **Download the latest release zip** from [GitHub Releases](https://github.com/shtirlitsDva/ACD-MCP/releases) (or build it locally — see [Build a release](#build-a-release)).
 2. **Extract** the zip somewhere stable, e.g. `C:\Tools\acd-mcp\`.
-3. **Run the installer** in PowerShell 7+:
+3. **Deploy the AutoCAD bundle** — every AI client needs this:
 
    ```powershell
-   pwsh C:\Tools\acd-mcp\install-hooks\Install-AcdMcp.ps1
+   pwsh C:\Tools\acd-mcp\install-hooks\Install-Bundle.ps1
    ```
 
-   It auto-detects which AI clients you have installed and registers the `acd-mcp` MCP server with each:
+   Copies `ACD-MCP.bundle` into `%APPDATA%\Autodesk\ApplicationPlugins\` (refuses if AutoCAD is running — close it first, or pass `-Force`).
+
+4. **Register the MCP server** with your non-Claude-Code clients:
+
+   ```powershell
+   pwsh C:\Tools\acd-mcp\install-hooks\Install-Mcp.ps1
+   ```
+
+   Auto-detects installed clients and registers `acd-mcp`:
 
    | Client            | File written                                                 |
    |-------------------|--------------------------------------------------------------|
@@ -71,36 +81,36 @@ ACD-MCP ships as a Claude Code plugin that doubles as a portable folder. The sam
    | GitHub Copilot    | `%APPDATA%\Code\User\mcp.json` — `servers.acd-mcp`           |
    | Claude Desktop    | `%APPDATA%\Claude\claude_desktop_config.json` — `mcpServers.acd-mcp` |
 
-   The same script copies the AutoCAD plugin bundle to `%APPDATA%\Autodesk\ApplicationPlugins\ACD-MCP.bundle\` (refuses if AutoCAD is running — close it first).
-
-   Pass `-Clients codex,copilot` to target specific clients, or `-Clients none -SkipBundle` to skip everything (rare).
+   Pass `-Clients codex,copilot` to target specific clients, or `-Clients none` for a dry run.
 
    The installer prefers each client's official CLI (`codex mcp add`, `code --add-mcp`) and falls back to direct config-file edits only when the CLI isn't on PATH. Re-runs are idempotent — entries are updated in place, not duplicated.
 
-   > **Note**: Run the installer from the **extracted release zip**, not from inside a Claude Code plugin cache (`~/.claude/plugins/cache/acd-mcp@*/`). Plugin cache paths change on every plugin update, so any MCP entry registered with a cache path would break on the next update. Claude Code users should run `Install-AcdMcp.ps1 -Clients none` from the cache for the bundle-only deploy, since `/plugin install` already wired Claude Code's MCP for them.
+   > Claude Code users **skip this step** — see [Claude Code (the shorter path)](#claude-code-the-shorter-path) below. Don't double-register, or `acd-mcp` will appear twice in Claude Code's roster.
 
-4. **Restart your AI client(s)** so they pick up the new MCP server.
+   > **Note**: Run `Install-Mcp.ps1` from the **extracted release zip**, not from inside a Claude Code plugin cache (`~/.claude/plugins/cache/acd-mcp@*/`). Plugin cache paths change on every plugin update, so any MCP entry registered with a cache path would break on the next update.
+
+5. **Restart your AI client(s)** so they pick up the new MCP server.
 
 ### Claude Code (the shorter path)
 
-Claude Code users can install everything Claude-side via the plugin command:
+Claude Code users wire the MCP via the plugin command:
 
 ```
 /plugin marketplace add https://github.com/shtirlitsDva/ACD-MCP
 /plugin install acd-mcp@acd-mcp
 ```
 
-That wires `Bridge.exe` into Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces the three skills: `/acd-mcp:start`, `/acd-mcp:batch`, and `/acd-mcp:add-dto`.
+That registers `Bridge.exe` in Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces the three skills: `/acd-mcp:start`, `/acd-mcp:batch`, and `/acd-mcp:add-dto`.
 
 > `Bridge.exe` and its .NET dependencies are committed to `bin/` at the repo root. Claude Code marketplace install only fetches what's in the repo, so the binary needs to live there. The release script `scripts/Build-Release.ps1` refreshes `bin/` and reminds the maintainer to commit. Users get the binary by cloning — no separate download.
 
-**You still need `Install-AcdMcp.ps1` for the AutoCAD bundle.** The Claude plugin host cannot write into `%APPDATA%\Autodesk\`, so the bundle deploy is the separate step. Run it once:
+**You still need `Install-Bundle.ps1` for the AutoCAD bundle.** The Claude plugin host cannot write into `%APPDATA%\Autodesk\`, so the bundle deploy is a separate step. Run it once:
 
 ```powershell
-pwsh ~/.claude/plugins/cache/acd-mcp@acd-mcp/*/install-hooks/Install-AcdMcp.ps1 -Clients none
+pwsh ~/.claude/plugins/cache/acd-mcp@acd-mcp/*/install-hooks/Install-Bundle.ps1
 ```
 
-(`-Clients none` skips re-registering with non-Claude clients since `/plugin install` already did Claude.)
+(No need for `Install-Mcp.ps1` here — `/plugin install` already did the Claude Code side.)
 
 ### Inside AutoCAD
 
@@ -112,10 +122,15 @@ After the bundle is in place:
 
 ### Uninstall
 
+Mirror of install — two independent scripts:
+
 ```powershell
-pwsh install-hooks\Uninstall-AcdMcp.ps1
-# add -Purge to also delete your DTOs, saved scripts, and logs
+pwsh install-hooks\Uninstall-Mcp.ps1        # deregister acd-mcp from Codex/Copilot/Claude Desktop
+pwsh install-hooks\Uninstall-Bundle.ps1     # remove the AutoCAD bundle
+pwsh install-hooks\Uninstall-Bundle.ps1 -Purge   # also delete DTOs, saved scripts, logs
 ```
+
+Claude Code users remove via `/plugin uninstall acd-mcp@acd-mcp`.
 
 ## Build a release
 

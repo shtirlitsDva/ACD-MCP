@@ -1,38 +1,26 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Uninstall ACD-MCP: remove the AutoCAD plugin bundle and deregister the
-  acd-mcp stdio MCP server from each detected AI client.
+  Deregister the acd-mcp stdio MCP server from Codex, GitHub Copilot,
+  and Claude Desktop.
 
 .DESCRIPTION
-  Inverse of Install-AcdMcp.ps1. CLI-first like the installer; file-edit
+  Inverse of Install-Mcp.ps1. CLI-first like the installer; file-edit
   fallback when no CLI is available.
 
-  User content under %APPDATA%\Acd.Mcp\ (dto-user/, scripts/) and
-  %LOCALAPPDATA%\Acd.Mcp\ (logs, batch-run history) is preserved by
-  default. Pass -Purge to delete those too.
+  Claude Code is intentionally NOT in scope here — Claude Code users
+  remove via `/plugin uninstall acd-mcp@acd-mcp`.
+
+  This script does NOT touch user content (dto-user, scripts, logs).
+  Use Uninstall-Bundle.ps1 -Purge for that.
 
 .PARAMETER Clients
   Which clients to deregister from. 'auto' detects installed clients.
-
-.PARAMETER Purge
-  Also delete user-authored DTOs, saved scripts, batch-run history, and
-  the diagnostic log.
-
-.PARAMETER SkipBundle
-  Leave the AutoCAD bundle in place.
-
-.PARAMETER Force
-  Skip the AutoCAD-running check when removing the bundle.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [ValidateSet('auto','codex','copilot','claude-desktop','claude-code','none')]
-    [string[]] $Clients = @('auto'),
-
-    [switch] $Purge,
-    [switch] $SkipBundle,
-    [switch] $Force
+    [ValidateSet('auto','codex','copilot','claude-desktop','none')]
+    [string[]] $Clients = @('auto')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,11 +50,6 @@ function Test-CodexInstalled {
     }
     return $false
 }
-function Test-AutoCadRunning {
-    @('acad','acadlt','accoreconsole') |
-        ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
-        Where-Object { $_ } | Select-Object -First 1
-}
 
 $serverName = 'acd-mcp'
 
@@ -94,25 +77,6 @@ function Remove-JsonProperty([string] $path, [string] $parent, [string] $key) {
         $json | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath $path -Encoding UTF8
     }
     return $true
-}
-
-# ─── bundle ─────────────────────────────────────────────────────────────────
-
-if (-not $SkipBundle) {
-    Write-Step "AutoCAD bundle"
-    $bundleTarget = Join-Path $env:APPDATA 'Autodesk\ApplicationPlugins\ACD-MCP.bundle'
-    if (Test-Path -LiteralPath $bundleTarget) {
-        $running = Test-AutoCadRunning
-        if ($running -and -not $Force) {
-            Fail "AutoCAD is running (PID $($running.Id)). Close it and re-run, or pass -Force."
-        }
-        if ($PSCmdlet.ShouldProcess($bundleTarget, "Remove bundle")) {
-            Remove-Item -LiteralPath $bundleTarget -Recurse -Force
-            Write-Ok "Removed $bundleTarget"
-        }
-    } else {
-        Write-Skip2 "Bundle not installed"
-    }
 }
 
 # ─── client deregistration ──────────────────────────────────────────────────
@@ -169,17 +133,12 @@ function Unregister-ClaudeDesktop {
     }
 }
 
-function Unregister-ClaudeCode {
-    Write-Step "Claude Code"
-    if (-not (Test-Command 'claude')) { Write-Skip2 "claude CLI not on PATH"; return }
-    if ($PSCmdlet.ShouldProcess($serverName, "claude mcp remove")) {
-        & claude mcp remove $serverName 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) { Write-Ok "Removed via claude CLI" }
-        else { Write-Skip2 "Not found (or claude mcp remove exited $LASTEXITCODE)" }
-    }
-}
+# ─── main flow ──────────────────────────────────────────────────────────────
 
-# Resolve 'auto' / 'none' the same way the installer does.
+Write-Host ""
+Write-Host "ACD-MCP MCP-client uninstaller" -ForegroundColor White
+Write-Host ""
+
 $effective = if ($Clients -contains 'none') {
     @()
 } elseif ($Clients -contains 'auto') {
@@ -204,24 +163,6 @@ foreach ($client in ($effective | Select-Object -Unique)) {
         'codex'          { Unregister-Codex }
         'copilot'        { Unregister-Copilot }
         'claude-desktop' { Unregister-ClaudeDesktop }
-        'claude-code'    { Unregister-ClaudeCode }
-    }
-}
-
-# ─── purge user data ────────────────────────────────────────────────────────
-
-if ($Purge) {
-    Write-Step "Purge user content"
-    foreach ($dir in @(
-        Join-Path $env:APPDATA       'Acd.Mcp'
-        Join-Path $env:LOCALAPPDATA  'Acd.Mcp'
-    )) {
-        if (Test-Path -LiteralPath $dir) {
-            if ($PSCmdlet.ShouldProcess($dir, "Recursively remove")) {
-                Remove-Item -LiteralPath $dir -Recurse -Force
-                Write-Ok "Removed $dir"
-            }
-        } else { Write-Skip2 "Not present: $dir" }
     }
 }
 

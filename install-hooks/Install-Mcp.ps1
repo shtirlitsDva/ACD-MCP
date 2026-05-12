@@ -1,76 +1,48 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Install ACD-MCP: deploy the AutoCAD plugin bundle and register the
-  Acd.Mcp.Bridge stdio MCP server with each detected AI client.
+  Register the acd-mcp stdio MCP server with Codex, GitHub Copilot, and
+  Claude Desktop.
 
 .DESCRIPTION
-  Idempotent installer. Re-running updates entries in place.
+  Idempotent. Re-running updates entries in place.
 
-  Path 1 — Claude Code: install the plugin instead, via
-    /plugin marketplace add https://github.com/shtirlitsDva/ACD-MCP
-    /plugin install acd-mcp@acd-mcp
-  Then run THIS script with -Clients none to deploy just the AutoCAD bundle.
+  Claude Code is intentionally NOT in scope here — Claude Code users
+  install via `/plugin install acd-mcp@acd-mcp` which wires the MCP
+  through the plugin's .mcp.json. Don't double-register.
 
-  Path 2 — All other clients (Codex, Copilot, Claude Desktop):
-  Run this script. It:
-    1. Deploys ACD-MCP.bundle to %APPDATA%\Autodesk\ApplicationPlugins\
-       (refuses if AutoCAD is running or the on-disk version is newer,
-        unless -Force).
-    2. Registers acd-mcp with each MCP client detected on the machine,
-       using the client's official CLI (`codex mcp add`,
-       `code --add-mcp`) where available — file-edit fallback only when
-       the CLI is missing or has no idempotent CLI command.
+  Companion script: Install-Bundle.ps1 (deploys the AutoCAD plugin DLLs).
+  Run that one too — the MCP roundtrip needs both ends.
 
 .PARAMETER Clients
   Which clients to register.
     'auto'           — auto-detect every installed client (default)
-    'codex'          — Codex CLI
+    'codex'          — Codex CLI / VS Code extension / Desktop app
     'copilot'        — VS Code / Insiders (GitHub Copilot)
     'claude-desktop' — Claude Desktop app
-    'claude-code'    — Claude Code (only if you do NOT use /plugin install)
-    'none'           — skip all MCP wiring (bundle-only run)
+    'none'           — register nothing (use when you only want path validation)
 
 .PARAMETER BridgePath
   Absolute path to Acd.Mcp.Bridge.exe. Defaults to
   ..\bin\Acd.Mcp.Bridge.exe relative to this script.
 
-.PARAMETER BundleSource
-  Path to the ACD-MCP.bundle source folder. Defaults to
-  ..\autocad-bundle\ACD-MCP.bundle relative to this script.
-
-.PARAMETER SkipBundle
-  Skip the AutoCAD bundle deployment.
-
-.PARAMETER Force
-  Overwrite the AutoCAD bundle even if on-disk is newer, and skip the
-  AutoCAD-running check.
+.EXAMPLE
+  pwsh .\Install-Mcp.ps1
+  # Auto-detect installed clients and register acd-mcp with each.
 
 .EXAMPLE
-  pwsh .\Install-AcdMcp.ps1
-  # Default: deploys bundle + registers MCP with every detected client.
-
-.EXAMPLE
-  pwsh .\Install-AcdMcp.ps1 -Clients none
-  # Bundle-only — for Claude Code users who already ran /plugin install.
-
-.EXAMPLE
-  pwsh .\Install-AcdMcp.ps1 -Clients codex -SkipBundle
-  # Re-register just Codex without touching the AutoCAD bundle.
+  pwsh .\Install-Mcp.ps1 -Clients codex,copilot
+  # Register only with Codex + Copilot.
 
 .NOTES
   Windows-only (AutoCAD is Windows-only). Run from pwsh 7+.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [ValidateSet('auto','codex','copilot','claude-desktop','claude-code','none')]
+    [ValidateSet('auto','codex','copilot','claude-desktop','none')]
     [string[]] $Clients = @('auto'),
 
-    [string] $BridgePath,
-    [string] $BundleSource,
-
-    [switch] $SkipBundle,
-    [switch] $Force
+    [string] $BridgePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,14 +61,8 @@ function Fail($msg)        { Write-Host "    X   $msg" -ForegroundColor Red; thr
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $pluginRoot = Split-Path -Parent $scriptRoot
 
-if (-not $BridgePath)   { $BridgePath   = Join-Path $pluginRoot 'bin\Acd.Mcp.Bridge.exe' }
-if (-not $BundleSource) { $BundleSource = Join-Path $pluginRoot 'autocad-bundle\ACD-MCP.bundle' }
-
-$BridgePath   = [System.IO.Path]::GetFullPath($BridgePath)
-$BundleSource = [System.IO.Path]::GetFullPath($BundleSource)
-
-$bundleTargetRoot = Join-Path $env:APPDATA 'Autodesk\ApplicationPlugins'
-$bundleTarget     = Join-Path $bundleTargetRoot 'ACD-MCP.bundle'
+if (-not $BridgePath) { $BridgePath = Join-Path $pluginRoot 'bin\Acd.Mcp.Bridge.exe' }
+$BridgePath = [System.IO.Path]::GetFullPath($BridgePath)
 
 # Server name in every client's config — kept identical across clients so a
 # user looking at one config can find the same name in the others.
@@ -123,21 +89,6 @@ function Test-CodexInstalled {
         if ($hit) { return $true }
     }
     return $false
-}
-
-function Test-AutoCadRunning {
-    @('acad','acadlt','accoreconsole') |
-        ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } |
-        Where-Object { $_ } | Select-Object -First 1
-}
-
-function Get-BundleVersion([string] $bundleDir) {
-    $pkg = Join-Path $bundleDir 'PackageContents.xml'
-    if (-not (Test-Path -LiteralPath $pkg)) { return $null }
-    try {
-        $xml = [xml](Get-Content -LiteralPath $pkg -Raw)
-        return [version]$xml.ApplicationPackage.AppVersion
-    } catch { return $null }
 }
 
 # Upsert a property into a JSON object: creates parent if missing,
@@ -174,7 +125,6 @@ function Write-Json([string] $path, $object) {
     $dir = Split-Path -Parent $path
     if ($dir) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     $json = $object | ConvertTo-Json -Depth 32
-    # ConvertTo-Json on PowerShell 7 emits no BOM via Set-Content -Encoding UTF8.
     Set-Content -LiteralPath $path -Value $json -Encoding UTF8
 }
 
@@ -193,56 +143,6 @@ function Set-TomlTable([string] $content, [string] $tableName, [string] $body) {
     $stripped = Remove-TomlTable $content $tableName
     $sep = if ($stripped -and -not $stripped.EndsWith("`n")) { "`n" } else { '' }
     $stripped + $sep + "`n[$tableName]`n$body"
-}
-
-# ─── bundle deploy ──────────────────────────────────────────────────────────
-
-function Install-Bundle {
-    Write-Step "AutoCAD bundle"
-
-    if (-not (Test-Path -LiteralPath $BundleSource)) {
-        Fail "Bundle source not found: $BundleSource"
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $BundleSource 'PackageContents.xml'))) {
-        Fail "Bundle source has no PackageContents.xml: $BundleSource"
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $BundleSource 'Contents'))) {
-        Fail "Bundle source has no Contents/ folder: $BundleSource"
-    }
-    # Require at least one .dll — the in-repo Contents/ only has .gitkeep
-    # until scripts\Build-Release.ps1 populates it. Without this guard the
-    # installer happily deploys a non-functional bundle.
-    $dllCount = @(Get-ChildItem (Join-Path $BundleSource 'Contents') -File -Filter '*.dll' -ErrorAction SilentlyContinue).Count
-    if ($dllCount -eq 0) {
-        Fail "Bundle Contents/ has no .dll files. Build first: pwsh scripts\Build-Release.ps1"
-    }
-
-    $sourceVer   = Get-BundleVersion $BundleSource
-    $existingVer = if (Test-Path -LiteralPath $bundleTarget) { Get-BundleVersion $bundleTarget } else { $null }
-
-    if ($existingVer -and -not $Force) {
-        if ($sourceVer -le $existingVer) {
-            Write-Skip2 "Installed bundle ($existingVer) is newer or equal to source ($sourceVer). -Force to overwrite."
-            return
-        }
-    }
-
-    $running = Test-AutoCadRunning
-    if ($running -and -not $Force) {
-        Fail "AutoCAD is running (PID $($running.Id)). Close it and re-run, or pass -Force."
-    }
-    if ($running -and $Force) {
-        Write-Warn2 "AutoCAD is running but -Force was passed. Bundle copy may fail with locked-file errors."
-    }
-
-    if ($PSCmdlet.ShouldProcess($bundleTarget, "Deploy ACD-MCP.bundle v$sourceVer")) {
-        if (Test-Path -LiteralPath $bundleTarget) {
-            Remove-Item -LiteralPath $bundleTarget -Recurse -Force
-        }
-        New-Item -ItemType Directory -Path $bundleTargetRoot -Force | Out-Null
-        Copy-Item -LiteralPath $BundleSource -Destination $bundleTargetRoot -Recurse -Force
-        Write-Ok "Deployed bundle v$sourceVer to $bundleTarget"
-    }
 }
 
 # ─── client registrations ───────────────────────────────────────────────────
@@ -352,36 +252,11 @@ function Register-ClaudeDesktop {
     }
 }
 
-function Register-ClaudeCode {
-    Write-Step "Claude Code"
-
-    if (-not (Test-Command 'claude')) {
-        Write-Skip2 "claude CLI not on PATH"
-        return
-    }
-    # Prefer the upsert via remove-then-add — `claude mcp` has its own
-    # CLI matching codex's surface, and remove exits non-zero only when the
-    # name is unknown (which we don't care about for upsert).
-    if ($PSCmdlet.ShouldProcess($serverName, "claude mcp remove (idempotent upsert)")) {
-        & claude mcp remove $serverName 2>$null | Out-Null
-    }
-    if ($PSCmdlet.ShouldProcess($serverName, "claude mcp add $BridgePath")) {
-        & claude mcp add $serverName $BridgePath
-        if ($LASTEXITCODE -eq 0) {
-            Write-Ok "Registered via claude CLI"
-            Write-Warn2 "Heads-up: if you also use '/plugin install acd-mcp', the plugin would register the same server. Use one or the other, not both."
-        } else {
-            Write-Warn2 "claude mcp add exited $LASTEXITCODE"
-        }
-    }
-}
-
 # ─── main flow ──────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "ACD-MCP installer" -ForegroundColor White
+Write-Host "ACD-MCP MCP-client installer" -ForegroundColor White
 Write-Host "  Bridge: $BridgePath"
-Write-Host "  Bundle: $BundleSource"
 Write-Host ""
 
 if (-not (Test-Path -LiteralPath $BridgePath)) {
@@ -389,8 +264,6 @@ if (-not (Test-Path -LiteralPath $BridgePath)) {
     Write-Warn2 "Build with: pwsh scripts\Build-Release.ps1 (or dotnet publish src\Acd.Mcp.Bridge)"
     Write-Warn2 "MCP registration will write paths that don't resolve until the file exists."
 }
-
-if (-not $SkipBundle) { Install-Bundle }
 
 # Resolve 'auto' / 'none' to a concrete client list.
 $effective = if ($Clients -contains 'none') {
@@ -407,8 +280,6 @@ $effective = if ($Clients -contains 'none') {
     if (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Claude')) {
         $detected += 'claude-desktop'
     }
-    # claude-code is NEVER in auto-detect — `/plugin install` is the canonical
-    # path. Pass `-Clients claude-code` to opt in for standalone wiring.
     if (-not $detected) {
         Write-Warn2 "Auto-detect found no clients. Pass -Clients explicitly or install one."
     }
@@ -422,15 +293,13 @@ foreach ($client in ($effective | Select-Object -Unique)) {
         'codex'          { Register-Codex }
         'copilot'        { Register-Copilot }
         'claude-desktop' { Register-ClaudeDesktop }
-        'claude-code'    { Register-ClaudeCode }
     }
 }
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
 Write-Host "Next:" -ForegroundColor White
-Write-Host "  1. Launch AutoCAD 2025+. The bundle autoloads (look for 'ACDMCP' commands)."
-Write-Host "  2. Run ACDMCP_START to open the named pipe."
-Write-Host "  3. (Optional) Run ACDMCP_PALETTE for the dockable REPL/BATCH UI."
-Write-Host "  4. Restart your AI client so it picks up the new MCP server."
+Write-Host "  1. Restart your AI client so it picks up the new MCP server."
+Write-Host "  2. Deploy the AutoCAD plugin bundle if you haven't: pwsh .\Install-Bundle.ps1"
+Write-Host "  3. In AutoCAD: ACDMCP_START to open the pipe."
 Write-Host ""

@@ -34,7 +34,12 @@ jobs:
         shell: pwsh
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-          $issues = Invoke-ScriptAnalyzer -Path install-hooks,scripts -Recurse -Severity Warning,Error
+          # Invoke-ScriptAnalyzer's -Path is [String], not [String[]] — loop
+          # rather than pass a comma-list (silent confusion otherwise).
+          $issues = @()
+          foreach ($p in 'install-hooks','scripts') {
+            $issues += Invoke-ScriptAnalyzer -Path $p -Recurse -Severity Warning,Error
+          }
           $issues | Format-Table -AutoSize
           if ($issues | Where-Object { $_.Severity -eq 'Error' }) { exit 1 }
 
