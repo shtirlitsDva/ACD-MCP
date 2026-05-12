@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Threading;
 using Acd.Mcp.Pipe;
+using Acd.Mcp.Scripting;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -31,12 +32,15 @@ namespace Acd.Mcp.Ui
         [ObservableProperty] private bool _isRunning;
 
         public ObservableCollection<LogEntryViewModel> LogEntries { get; } = new();
+        public ContextInspectorViewModel ContextInspector { get; }
 
-        public ReplViewModel(AcadExecutor executor, ExecutionLog log)
+        public ReplViewModel(AcadExecutor executor, ScriptSession session, ExecutionLog log)
         {
             _executor = executor;
             _log = log;
             _dispatcher = Dispatcher.CurrentDispatcher;
+            ContextInspector = new ContextInspectorViewModel(session);
+            ContextInspector.Refresh();
 
             // Last-line safety net for anything that bubbles up to the dispatcher
             // (binding errors, async-void unhandled exceptions, etc.).
@@ -89,6 +93,7 @@ namespace Acd.Mcp.Ui
         private void ResetSession() => SafeBoundary.Run("ReplViewModel.ResetSession", () =>
         {
             _executor.Reset();
+            ContextInspector.Refresh();
         });
 
         [RelayCommand]
@@ -124,6 +129,7 @@ namespace Acd.Mcp.Ui
                 while (LogEntries.Count > maxUiEntries)
                     LogEntries.RemoveAt(LogEntries.Count - 1);
                 UpdateStatus();
+                ContextInspector.Refresh();
             });
         }
 

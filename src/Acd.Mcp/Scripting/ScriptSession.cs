@@ -22,6 +22,13 @@ namespace Acd.Mcp.Scripting
         private ScriptState? _state;
         private ScriptOptions _options = BuildOptions();
 
+        // Read-only views for UI inspectors. CurrentState may be null before the
+        // first successful submission and after Reset(). Both surfaces are safe
+        // to read from the main thread between ExecuteAsync calls; readers must
+        // not mutate the returned ScriptState.
+        public ScriptState? CurrentState => _state;
+        public AcadGlobals Globals => _globals;
+
         public async Task<ExecuteResult> ExecuteAsync(string code, CancellationToken ct = default)
         {
             var sw = Stopwatch.StartNew();

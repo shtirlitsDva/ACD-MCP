@@ -19,10 +19,11 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="*" MinHeight="80"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="2*" MinHeight="120"/>
+            <RowDefinition Height="*" MinHeight="80"/>   <!-- Editor -->
+            <RowDefinition Height="Auto"/>               <!-- Context expander -->
+            <RowDefinition Height="Auto"/>               <!-- Toolbar -->
+            <RowDefinition Height="Auto"/>               <!-- Log header -->
+            <RowDefinition Height="2*" MinHeight="120"/> <!-- Log list -->
         </Grid.RowDefinitions>
 
         <!-- Editor: AvalonEdit with C# syntax highlighting.
@@ -49,8 +50,36 @@
             </avalon:TextEditor>
         </Border>
 
-        <!-- Toolbar -->
+        <!-- Context inspector: globals (Doc/Db/Ed) + session variables.
+             Collapsed by default; refreshes after every execution and Reset.
+             The scroll-viewer caps height so a long variable list doesn't
+             shove the toolbar/log offscreen. -->
         <Border Grid.Row="1" Style="{StaticResource Border.SectionStrip}">
+            <Expander IsExpanded="{Binding ContextInspector.IsExpanded, Mode=TwoWay}"
+                      Header="Context (Doc / Db / Ed + session variables)">
+                <ScrollViewer MaxHeight="200"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Margin="22,4,4,4">
+                    <StackPanel>
+                        <TextBlock Text="Globals"
+                                   Style="{StaticResource Text.SectionHeader}"
+                                   Margin="0,0,0,2"/>
+                        <ItemsControl ItemsSource="{Binding ContextInspector.Globals}"
+                                      ItemTemplate="{StaticResource Template.ContextRow}"/>
+
+                        <TextBlock Text="Variables"
+                                   Style="{StaticResource Text.SectionHeader}"
+                                   Margin="0,8,0,2"/>
+                        <ItemsControl ItemsSource="{Binding ContextInspector.Variables}"
+                                      ItemTemplate="{StaticResource Template.ContextRow}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Expander>
+        </Border>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="2" Style="{StaticResource Border.SectionStrip}">
             <DockPanel LastChildFill="True">
                 <Button Content="Run (Ctrl+Enter)"
                         Command="{Binding RunCommand}"
@@ -68,14 +97,14 @@
         </Border>
 
         <!-- Section header for the log -->
-        <Border Grid.Row="2" Style="{StaticResource Border.SectionStrip}">
+        <Border Grid.Row="3" Style="{StaticResource Border.SectionStrip}">
             <TextBlock Text="Execution log (newest first — click a row to see details)"
                        Style="{StaticResource Text.SectionHeader}"/>
         </Border>
 
         <!-- Log list. Each row is an Expander; header is one fixed-pitch line,
              detail body shows code + result. All styling lives in Theme.xaml. -->
-        <ListBox Grid.Row="3" ItemsSource="{Binding LogEntries}">
+        <ListBox Grid.Row="4" ItemsSource="{Binding LogEntries}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <Expander>

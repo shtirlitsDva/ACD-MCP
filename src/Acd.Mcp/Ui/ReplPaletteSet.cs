@@ -1,4 +1,5 @@
 using Acd.Mcp.Pipe;
+using Acd.Mcp.Scripting;
 using Autodesk.AutoCAD.Windows;
 
 namespace Acd.Mcp.Ui
@@ -18,7 +19,7 @@ namespace Acd.Mcp.Ui
 
         private readonly ReplControl _control;
 
-        public ReplPaletteSet(AcadExecutor executor, ExecutionLog log)
+        public ReplPaletteSet(AcadExecutor executor, ScriptSession session, ExecutionLog log)
             : base("ACD-MCP REPL", "ACDMCP_PALETTE", PaletteGuid)
         {
             Style = PaletteSetStyles.ShowAutoHideButton
@@ -27,7 +28,7 @@ namespace Acd.Mcp.Ui
                   | PaletteSetStyles.Snappable;
             MinimumSize = new System.Drawing.Size(400, 250);
 
-            _control = new ReplControl(executor, log);
+            _control = new ReplControl(executor, session, log);
             AddVisual("REPL", _control);
         }
 

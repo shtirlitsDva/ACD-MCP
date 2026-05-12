@@ -1,6 +1,7 @@
 using System.Windows.Controls;
 using System.Xml;
 using Acd.Mcp.Pipe;
+using Acd.Mcp.Scripting;
 using ICSharpCode.AvalonEdit.Highlighting;
 using ICSharpCode.AvalonEdit.Highlighting.Xshd;
 
@@ -27,11 +28,11 @@ namespace Acd.Mcp.Ui
         private readonly ReplViewModel _vm;
         private bool _suppressSync;
 
-        public ReplControl(AcadExecutor executor, ExecutionLog log)
+        public ReplControl(AcadExecutor executor, ScriptSession session, ExecutionLog log)
         {
             InitializeComponent();
 
-            _vm = new ReplViewModel(executor, log);
+            _vm = new ReplViewModel(executor, session, log);
             DataContext = _vm;
 
             ApplyDarkSyntax();

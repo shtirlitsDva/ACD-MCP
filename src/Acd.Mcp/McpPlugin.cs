@@ -28,7 +28,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v6-darker";
+        private const string Version = "v7-context";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -150,7 +150,7 @@ namespace Acd.Mcp
                 return;
             }
 
-            _palette ??= new ReplPaletteSet(_executor!, _log!);
+            _palette ??= new ReplPaletteSet(_executor!, _session!, _log!);
             _palette.Visible = true;
         });
 
