@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Acd.Mcp.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    The full Acd.Mcp project targets net8.0-windows8.0 with UseWPF and
+    references AutoCAD's managed assemblies. None of that compiles outside
+    a Windows + AutoCAD environment. So this test project compiles only
+    the AutoCAD-free source files directly via <Compile Include="...">.
+    Everything tested here is pure logic (Outcome, DTO header parsing,
+    registry, converter factory dispatch) and needs no AutoCAD surface.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\src\Acd.Mcp\Outcome.cs" Link="Sut\Outcome.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoHeader.cs" Link="Sut\DtoHeader.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoRegistry.cs" Link="Sut\DtoRegistry.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Serialization\IDtoProjection.cs" Link="Sut\IDtoProjection.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Serialization\IDtoReloadTrigger.cs" Link="Sut\IDtoReloadTrigger.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoConverterFactory.cs" Link="Sut\DtoConverterFactory.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Serialization\AcadDtoOptions.cs" Link="Sut\AcadDtoOptions.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(AssemblyName)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+</Project>

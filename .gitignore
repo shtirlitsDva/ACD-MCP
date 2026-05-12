@@ -85,3 +85,6 @@ Directory.Build.props.user
 
 # Bundle output
 Deploy/
+
+# Background-agent worktrees (managed by Claude Code harness, not source)
+.claude/worktrees/
