@@ -1,6 +1,7 @@
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
+using Autodesk.Civil.ApplicationServices;
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace Acd.Mcp.Api
@@ -22,5 +23,10 @@ namespace Acd.Mcp.Api
         public Document Doc => Application.DocumentManager.MdiActiveDocument!;
         public Database Db => Doc.Database;
         public Editor Ed => Doc.Editor;
+
+        // Null in non-Civil-3D drawings (e.g. plain .dwg opened in vanilla
+        // AutoCAD). Callers either guard with a null check or wrap in try/catch
+        // — same shape Civil scripts already expect from GetCivilDocument.
+        public CivilDocument? CivilDoc => CivilApplication.ActiveDocument;
     }
 }

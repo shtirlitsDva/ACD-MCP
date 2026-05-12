@@ -4,13 +4,16 @@
   Build, assemble, and (optionally) publish an ACD-MCP plugin release.
 
 .DESCRIPTION
-  This script is the release pipeline. GitHub Actions can't build
-  Acd.Mcp.dll (it references AutoCAD 2025 managed APIs that don't exist
-  on a stock CI runner), so the release is built on a maintainer machine
-  with AutoCAD 2025 installed.
+  This script is the release pipeline. Runs locally or in CI — AutoCAD 2025
+  and Civil 3D 2025 reference assemblies come from NuGet (AutoCAD.NET 25.0.1
+  + Speckle.Civil3D.API 2025.0.0, ExcludeAssets=runtime), so no AutoCAD
+  install is required on the build machine. The .github/workflows/ci.yml
+  "release" job invokes this script on tag push.
 
   What it does:
-    1. dotnet publish Acd.Mcp.Bridge → bin/Acd.Mcp.Bridge.exe
+    1. dotnet publish Acd.Mcp.Bridge → bin/ at repo root (THE committed
+       binaries — Claude Code's /plugin install launches Bridge from here
+       via .mcp.json's ${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe).
     2. dotnet build  Acd.Mcp.sln    → Acd.Mcp.dll + transitive deps
     3. Assemble Deploy/acd-mcp-plugin/ with the full plugin layout:
          .claude-plugin/, skills/, .mcp.json, install-hooks/,
@@ -18,6 +21,13 @@
          (Acd.Mcp.dll + deps)
     4. Zip it to Deploy/acd-mcp-plugin-v<X.Y.Z>.zip
     5. (Optional) Create a GH Release and upload the zip with gh CLI.
+
+  After running locally, REMEMBER TO:
+    git add bin/
+    git commit -m "Refresh Bridge binary for v<X.Y.Z>"
+    git tag v<X.Y.Z>
+    git push --tags
+  CI then auto-uploads the zip to the GitHub Release (.github/workflows/ci.yml).
 
 .PARAMETER Configuration
   dotnet build configuration. Default: Release.
@@ -78,15 +88,30 @@ New-Item -ItemType Directory -Path $pluginStage -Force | Out-Null
 
 # ─── build ──────────────────────────────────────────────────────────────────
 
+$repoBinDir = Join-Path $repoRoot 'bin'
+
 if (-not $SkipBuild) {
-    Write-Step "dotnet publish Acd.Mcp.Bridge"
+    Write-Step "dotnet publish Acd.Mcp.Bridge → bin/"
+    # Publish directly into the committed bin/ at repo root. This is the
+    # SAME bin/ that Claude Code's /plugin install reads (per .mcp.json's
+    # ${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe), so refreshing it here
+    # keeps the marketplace install and the GitHub Release zip in lockstep.
+    # Wipe-then-publish so removed transitive deps from a prior build don't
+    # linger.
+    if (Test-Path $repoBinDir) {
+        Get-ChildItem $repoBinDir -File | Remove-Item -Force
+    }
     dotnet publish 'src/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj' `
         -c $Configuration `
-        -o (Join-Path $deployRoot 'bridge-publish') `
+        -o $repoBinDir `
         --self-contained false `
         -p:PublishSingleFile=false
     if ($LASTEXITCODE -ne 0) { Fail "Bridge publish failed" }
-    Write-Ok "Bridge published"
+    # Drop debug symbols from the committed bin/ — they bloat the repo
+    # without helping users. dotnet doesn't have a publish flag to skip
+    # the pdb cleanly, so prune after the fact.
+    Get-ChildItem $repoBinDir -File -Filter '*.pdb' | Remove-Item -Force
+    Write-Ok "Bridge published to $repoBinDir"
 
     Write-Step "dotnet build Acd.Mcp.sln"
     dotnet build 'Acd.Mcp.sln' -c $Configuration -p:Platform=x64
@@ -106,10 +131,10 @@ Copy-Item 'install-hooks'   (Join-Path $pluginStage 'install-hooks')   -Recurse
 Copy-Item 'README.md'       $pluginStage
 Write-Ok "Plugin metadata copied"
 
-# 2. Bridge.exe + its publish deps → bin/
+# 2. Bridge.exe + its publish deps → bin/ (copied from the canonical repo-root bin/)
 $pluginBin = Join-Path $pluginStage 'bin'
 New-Item -ItemType Directory -Path $pluginBin -Force | Out-Null
-Copy-Item (Join-Path $deployRoot 'bridge-publish\*') $pluginBin -Recurse
+Copy-Item (Join-Path $repoBinDir '*') $pluginBin -Recurse
 Write-Ok "Bridge.exe staged"
 
 # 3. AutoCAD bundle: copy structure + populate Contents/ from plugin bin.
@@ -164,8 +189,23 @@ if ($Publish) {
 Write-Host ""
 Write-Host "Release artifact: $zipPath" -ForegroundColor Green
 Write-Host ""
+
+# Nudge the maintainer if bin/ drifted from git. Without a refresh-and-commit,
+# Claude Code's /plugin install would pull stale Bridge binaries from master.
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $dirtyBin = git status --porcelain -- bin 2>$null
+    if ($dirtyBin) {
+        Write-Host "  ! bin/ has uncommitted changes — commit them so /plugin install picks up the refresh:" -ForegroundColor Yellow
+        Write-Host "    git add bin/"
+        Write-Host "    git commit -m `"Refresh Bridge binary for v$Version`""
+        Write-Host "    git tag v$Version && git push --tags"
+        Write-Host ""
+    }
+}
+
 Write-Host "Users install with one of:" -ForegroundColor White
-Write-Host "  Claude Code: /plugin install <repo>@<marketplace>     # via marketplace"
-Write-Host "               claude --plugin-url <release-zip-url>     # one-off"
+Write-Host "  Claude Code: /plugin marketplace add https://github.com/shtirlitsDva/ACD-MCP"
+Write-Host "               /plugin install acd-mcp@acd-mcp                 # uses committed bin/"
+Write-Host "               claude --plugin-url <release-zip-url>           # one-off, from release zip"
 Write-Host "  Others:      Download zip, extract, run install-hooks\Install-AcdMcp.ps1"
 Write-Host ""

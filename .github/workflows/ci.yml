@@ -1,19 +1,18 @@
-# Continuous integration for the AutoCAD-free parts of ACD-MCP.
-#
-# Acd.Mcp.dll itself can't build here — it references AutoCAD 2025 managed
-# DLLs that don't exist on stock GitHub runners. So this workflow only
-# validates the wire / runtime side (Acd.Mcp.Bridge, Acd.Mcp.Batch, tests).
-# The full release is built locally via scripts/Build-Release.ps1.
+# CI for ACD-MCP. Builds the full solution on every push (including the
+# AutoCAD plugin DLL — AutoCAD 2025 + Civil 3D 2025 refs come from NuGet,
+# so no AutoCAD install is required on the runner). On tag push (v*),
+# also produces the release zip and uploads it to a GitHub Release.
 name: CI
 
 on:
   push:
     branches: [master, main]
+    tags: ['v*']
   pull_request:
     branches: [master, main]
 
 jobs:
-  test:
+  build-and-test:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -22,25 +21,59 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore (AutoCAD-free projects)
-        run: |
-          dotnet restore src/Acd.Mcp.Batch/Acd.Mcp.Batch.csproj
-          dotnet restore src/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj
-          dotnet restore src/Acd.Mcp.Batch.Tests/Acd.Mcp.Batch.Tests.csproj
+      - name: Restore
+        run: dotnet restore Acd.Mcp.sln
 
-      - name: Build Acd.Mcp.Batch
-        run: dotnet build src/Acd.Mcp.Batch/Acd.Mcp.Batch.csproj -c Release --no-restore
+      - name: Build (full solution incl. AutoCAD plugin DLL)
+        run: dotnet build Acd.Mcp.sln -c Release -p:Platform=x64 --no-restore
 
-      - name: Build Acd.Mcp.Bridge
-        run: dotnet build src/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj -c Release --no-restore
+      - name: Test
+        run: dotnet test Acd.Mcp.sln -c Release -p:Platform=x64 --no-restore --no-build --verbosity normal
 
-      - name: Test Acd.Mcp.Batch
-        run: dotnet test src/Acd.Mcp.Batch.Tests/Acd.Mcp.Batch.Tests.csproj -c Release --no-restore --verbosity normal
-
-      - name: Lint installer scripts (PSScriptAnalyzer)
+      - name: Lint installer + release scripts (PSScriptAnalyzer)
         shell: pwsh
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
           $issues = Invoke-ScriptAnalyzer -Path install-hooks,scripts -Recurse -Severity Warning,Error
           $issues | Format-Table -AutoSize
           if ($issues | Where-Object { $_.Severity -eq 'Error' }) { exit 1 }
+
+  release:
+    # Only on tag push. Reuses the same Build-Release.ps1 a maintainer would
+    # run locally, then `gh release create`s the resulting zip.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-and-test
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build release zip
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v',''
+          pwsh ./scripts/Build-Release.ps1 -Version $version
+
+      - name: Upload zip to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v',''
+          $zip = "Deploy/acd-mcp-plugin-v$version.zip"
+          if (-not (Test-Path $zip)) { throw "Release zip not found at $zip" }
+          # If the tag-release already exists (e.g. created manually), upload
+          # the asset to it; otherwise create the release and upload.
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip --clobber
+          } else {
+            gh release create $tag $zip --title "ACD-MCP $tag" --generate-notes
+          }

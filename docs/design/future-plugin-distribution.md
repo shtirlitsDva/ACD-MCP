@@ -17,7 +17,7 @@ end users across multiple AI clients.
 - Installer (second-path for Codex / Copilot / Claude Desktop, + AutoCAD bundle deploy for all clients) — `install-hooks/Install-AcdMcp.ps1`
 - Uninstaller — `install-hooks/Uninstall-AcdMcp.ps1`
 - Release builder — `scripts/Build-Release.ps1`
-- CI for AutoCAD-free parts — `.github/workflows/ci.yml`
+- CI for the full solution (AutoCAD + Civil 3D refs via NuGet) + auto-publish on tag push — `.github/workflows/ci.yml`
 - README install section — see top-level README.
 
 Deferred from this v1 (still worth doing if/when the project goes public):

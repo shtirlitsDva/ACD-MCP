@@ -10,6 +10,12 @@ x64/
 x86/
 [Bb]in/
 [Oo]bj/
+
+# Exception: Bridge.exe + deps at repo root are checked in so /plugin install
+# can launch the MCP server straight after Claude Code clones the marketplace
+# repo. Refreshed by scripts/Build-Release.ps1. *.pdb stays excluded globally.
+!/bin/
+!/bin/**
 [Ll]og/
 [Ll]ogs/
 bld/
@@ -79,9 +85,6 @@ _ReSharper*/
 
 # MSBuild binary log
 *.binlog
-
-# Local user overrides (AutoCAD path)
-Directory.Build.props.user
 
 # Bundle output
 Deploy/

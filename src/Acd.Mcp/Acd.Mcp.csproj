@@ -58,7 +58,11 @@
          Assembly.LoadFrom's the side-by-side DLL into the default ALC before
          the plugin loads. The shared-name check in IsolatedPluginContext.Load
          fires before the deps.json resolver, so Private=True (default —
-         needed for the side-by-side copy) is harmless. -->
+         needed for the side-by-side copy) is harmless.
+
+         The AutoCAD + Civil 3D NuGet references flow through this
+         ProjectReference (compile-only via ExcludeAssets=runtime on the
+         Api project side), so this csproj does NOT redeclare them. -->
     <ProjectReference Include="..\Acd.Mcp.Api\Acd.Mcp.Api.csproj" />
   </ItemGroup>
 
@@ -75,26 +79,4 @@
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
   </PropertyGroup>
-
-  <ItemGroup>
-    <!-- AutoCAD 2025 managed APIs. Private=False because AutoCAD provides
-         these at runtime — copying them into the plugin folder would cause
-         load failures (duplicate type identity). -->
-    <Reference Include="accoremgd">
-      <HintPath>$(AutoCADPath)\accoremgd.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="acdbmgd">
-      <HintPath>$(AutoCADPath)\acdbmgd.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="acmgd">
-      <HintPath>$(AutoCADPath)\acmgd.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="AdWindows">
-      <HintPath>$(AutoCADPath)\AdWindows.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-  </ItemGroup>
 </Project>

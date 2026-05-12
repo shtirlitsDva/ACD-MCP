@@ -171,6 +171,10 @@ namespace Acd.Mcp.Serialization
                     "Autodesk.AutoCAD.Geometry",
                     "Autodesk.AutoCAD.EditorInput",
                     "Autodesk.AutoCAD.Runtime",
+                    "Autodesk.Civil",
+                    "Autodesk.Civil.ApplicationServices",
+                    "Autodesk.Civil.DatabaseServices",
+                    "Autodesk.Civil.DatabaseServices.Styles",
                     "Acd.Mcp.Serialization")
                 .WithAllowUnsafe(false)
                 .WithOptimizationLevel(OptimizationLevel.Debug);

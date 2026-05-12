@@ -20,21 +20,18 @@ The plugin and bridge share `Pipe/Protocol.cs` and `ExecuteResult.cs` via linked
 
 ## Requirements
 
-* AutoCAD 2025 or newer (the plugin uses .NET 8 collectible `AssemblyLoadContext`).
+* AutoCAD 2025 or newer at runtime (the plugin uses .NET 8 collectible `AssemblyLoadContext`).
 * .NET 8 SDK (or newer) to build.
 * Windows. Named pipes are Windows-style; the plugin and AutoCAD are Windows-only anyway.
+
+> AutoCAD is **not** required to build. The plugin's AutoCAD 2025 + Civil 3D 2025 reference
+> assemblies come from NuGet (`AutoCAD.NET` 25.0.1 + `Speckle.Civil3D.API` 2025.0.0, both
+> `ExcludeAssets="runtime"`). CI on stock GitHub runners builds the full solution.
 
 ## Build
 
 ```powershell
 dotnet build Acd.Mcp.sln -c Debug -p:Platform=x64
-```
-
-If your AutoCAD is not at `C:\Program Files\Autodesk\AutoCAD 2025`, override the path:
-
-```powershell
-copy Directory.Build.props.user.example Directory.Build.props.user
-# edit Directory.Build.props.user, set <AutoCADPath>
 ```
 
 Build outputs:
@@ -90,15 +87,17 @@ Claude Code users can install everything Claude-side via the plugin command:
 
 ```
 /plugin marketplace add https://github.com/shtirlitsDva/ACD-MCP
-/plugin install acd-mcp
+/plugin install acd-mcp@acd-mcp
 ```
 
-That wires Bridge.exe into Claude Code's MCP roster automatically (via the plugin's `.mcp.json`). The skills `/acd-mcp:start`, `/acd-mcp:batch`, and `/acd-mcp:add-dto` become available immediately.
+That wires `Bridge.exe` into Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces the three skills: `/acd-mcp:start`, `/acd-mcp:batch`, and `/acd-mcp:add-dto`.
+
+> `Bridge.exe` and its .NET dependencies are committed to `bin/` at the repo root. Claude Code marketplace install only fetches what's in the repo, so the binary needs to live there. The release script `scripts/Build-Release.ps1` refreshes `bin/` and reminds the maintainer to commit. Users get the binary by cloning — no separate download.
 
 **You still need `Install-AcdMcp.ps1` for the AutoCAD bundle.** The Claude plugin host cannot write into `%APPDATA%\Autodesk\`, so the bundle deploy is the separate step. Run it once:
 
 ```powershell
-pwsh ~/.claude/plugins/cache/acd-mcp@*/install-hooks/Install-AcdMcp.ps1 -Clients none
+pwsh ~/.claude/plugins/cache/acd-mcp@acd-mcp/*/install-hooks/Install-AcdMcp.ps1 -Clients none
 ```
 
 (`-Clients none` skips re-registering with non-Claude clients since `/plugin install` already did Claude.)
@@ -120,14 +119,18 @@ pwsh install-hooks\Uninstall-AcdMcp.ps1
 
 ## Build a release
 
-`scripts/Build-Release.ps1` is the release pipeline. GitHub Actions can't build `Acd.Mcp.dll` (it references AutoCAD 2025's managed APIs which aren't on stock runners), so the release is built locally on a machine with AutoCAD 2025 installed.
+`scripts/Build-Release.ps1` is the release pipeline. It runs locally **and** in CI — AutoCAD/Civil 3D references come from NuGet, no AutoCAD install required.
 
 ```powershell
 pwsh ./scripts/Build-Release.ps1            # build + assemble + zip → Deploy/acd-mcp-plugin-v<X.Y.Z>.zip
 pwsh ./scripts/Build-Release.ps1 -Publish   # same, then gh release create + upload
 ```
 
-CI (`.github/workflows/ci.yml`) runs on every push and tests the AutoCAD-free parts (`Acd.Mcp.Batch` + `Acd.Mcp.Bridge`) so the wire and runtime sides stay green even though the plugin DLL itself can't build in CI.
+CI (`.github/workflows/ci.yml`):
+* every push: builds the full solution (incl. the AutoCAD plugin DLL) and runs all tests
+* tag push `v*`: also runs `Build-Release.ps1` and uploads the zip to a GitHub Release
+
+So `git tag v0.2.0 && git push --tags` is sufficient to cut a release — no manual local step.
 
 ## Commands inside AutoCAD
 
@@ -158,7 +161,7 @@ Same text is also echoed to AutoCAD's command line and to `System.Diagnostics.Tr
 
 * **`autocad_execute_csharp(code, timeout_ms?)`** — run C# inside AutoCAD. Annotated as not-read-only, destructive, not-idempotent, open-world.
 
-  Globals available in scope: `Doc` (active `Document`), `Db` (its `Database`), `Ed` (its `Editor`). The full `Autodesk.AutoCAD.*` namespaces are imported. Variables declared at top level persist into the next call.
+  Globals available in scope: `Doc` (active `Document`), `Db` (its `Database`), `Ed` (its `Editor`), `CivilDoc` (active `CivilDocument` — null in non-Civil drawings). The full `Autodesk.AutoCAD.*` and `Autodesk.Civil.*` namespaces are imported. Variables declared at top level persist into the next call.
 
   Returns an `ExecuteResult` object with `success`, `returnValueRepr`, `diagnostics` (compile errors with file/line/col), `stdout`, `stderr`, `elapsedMs`.
 

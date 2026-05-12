@@ -44,7 +44,10 @@ namespace Acd.Mcp.Batch.Runtime
                     "Acd.Mcp.Batch",
                     "Autodesk.AutoCAD.DatabaseServices",
                     "Autodesk.AutoCAD.Geometry",
-                    "Autodesk.AutoCAD.Runtime")
+                    "Autodesk.AutoCAD.Runtime",
+                    "Autodesk.Civil",
+                    "Autodesk.Civil.DatabaseServices",
+                    "Autodesk.Civil.DatabaseServices.Styles")
                 .WithAllowUnsafe(false)
                 .WithOptimizationLevel(OptimizationLevel.Debug);
         }

@@ -356,9 +356,11 @@ Each slice independently verifiable in real AutoCAD 2025.
 5. **Security posture.** Anyone on the pipe runs arbitrary code in AutoCAD. The ACL
    restricts to the same user — same as DevReload's existing pattern.
 6. **`x64` only, `net8.0-windows8.0`.** Inherited from DevReload conventions.
-7. **AutoCAD reference path.** Same `$(AutoCADPath)` MSBuild property pattern as
-   DevReload, with the same `Directory.Build.props` override mechanism. We will copy
-   that file into this repo so both repos remain independently buildable.
+7. **AutoCAD + Civil 3D references.** Pulled from NuGet (`AutoCAD.NET` 25.0.1
+   + `Speckle.Civil3D.API` 2025.0.0, both `ExcludeAssets="runtime"`). No local
+   AutoCAD install required at build time. CI builds the full solution on stock
+   GitHub `windows-2022` runners. The earlier `$(AutoCADPath)` MSBuild-property
+   override mechanism (mirroring DevReload) has been retired.
 </risks-and-open-questions>
 
 <questions-for-the-user>

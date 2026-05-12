@@ -29,24 +29,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- AutoCAD managed APIs. Private=False because AutoCAD provides
-         these at runtime — copying them into the plugin folder would cause
-         load failures (duplicate type identity). -->
-    <Reference Include="accoremgd">
-      <HintPath>$(AutoCADPath)\accoremgd.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="acdbmgd">
-      <HintPath>$(AutoCADPath)\acdbmgd.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <!-- acmgd carries Autodesk.AutoCAD.ApplicationServices.Application (the
-         static type whose DocumentManager.MdiActiveDocument we re-resolve
-         on every Doc/Db/Ed read). Document/Database/Editor themselves are
-         in accoremgd/acdbmgd above. -->
-    <Reference Include="acmgd">
-      <HintPath>$(AutoCADPath)\acmgd.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
+    <!-- AutoCAD 2025 managed APIs (Autodesk-official package, AutoCAD.NET 25.0.1
+         pulls Core 25.0.0 / Model 25.0.0 transitively). ExcludeAssets=runtime is
+         the NuGet equivalent of the old <Private>False</Private> — AutoCAD
+         provides these DLLs at runtime; bundling them into the plugin folder
+         would cause duplicate-type-identity load failures. -->
+    <PackageReference Include="AutoCAD.NET" Version="25.0.1" ExcludeAssets="runtime" />
+
+    <!-- Civil 3D 2025 .NET API (Speckle-published; Autodesk does not ship a
+         Civil 3D NuGet). Same runtime-exclusion rule. CivilDocument in
+         AcadGlobals lives here so REPL scripts can see the active Civil
+         drawing through the same globals object. -->
+    <PackageReference Include="Speckle.Civil3D.API" Version="2025.0.0" ExcludeAssets="runtime" />
+
+    <!-- Speckle.Civil3D.API has a hard dep on Speckle.AutoCAD.API which would
+         pull a SECOND copy of accoremgd / acdbmgd / acmgd / AdWindows
+         reference assemblies. Satisfy the dep but use nothing from it — the
+         AutoCAD refs come from the Autodesk-official package above. -->
+    <PackageReference Include="Speckle.AutoCAD.API" Version="2025.0.0" ExcludeAssets="all" />
   </ItemGroup>
 </Project>
