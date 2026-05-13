@@ -105,53 +105,61 @@
                        Style="{StaticResource Text.SectionHeader}"/>
         </Border>
 
-        <!-- Log list. Each row is an Expander; header is one fixed-pitch line,
-             detail body shows code + result. All styling lives in Theme.xaml. -->
-        <ListBox Grid.Row="4" ItemsSource="{Binding LogEntries}">
-            <ListBox.ItemTemplate>
-                <DataTemplate>
-                    <Expander>
-                        <Expander.Header>
-                            <TextBlock Text="{Binding Header}"
-                                       Style="{StaticResource Text.LogRowHeader}"/>
-                        </Expander.Header>
-                        <Grid Margin="22,4,6,8">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
+        <!-- Log feed. Inspect-only, no selection semantics — ItemsControl, not
+             ListBox. A single outer ScrollViewer scrolls the whole feed as one
+             document, so an expanded row that overflows the viewport just makes
+             the list taller and the user scrolls to read the rest. Non-virtualized
+             by design: keeps Expander.IsExpanded (a visual state) from being
+             recycled away mid-scroll. -->
+        <ScrollViewer Grid.Row="4"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding LogEntries}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Expander>
+                            <Expander.Header>
+                                <TextBlock Text="{Binding Header}"
+                                           Style="{StaticResource Text.LogRowHeader}"/>
+                            </Expander.Header>
+                            <Grid Margin="22,4,6,8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0"
-                                       Text="Code"
-                                       Style="{StaticResource Text.SectionHeader}"
-                                       Margin="0,2,0,2"/>
-                            <Border Grid.Row="1" Style="{StaticResource Border.DetailBox}">
-                                <TextBox Text="{Binding Code, Mode=OneWay}"
-                                         Style="{StaticResource {x:Type TextBox}}"
-                                         IsReadOnly="True"
-                                         FontFamily="{StaticResource Font.Mono}"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"/>
-                            </Border>
+                                <TextBlock Grid.Row="0"
+                                           Text="Code"
+                                           Style="{StaticResource Text.SectionHeader}"
+                                           Margin="0,2,0,2"/>
+                                <Border Grid.Row="1" Style="{StaticResource Border.DetailBox}">
+                                    <TextBox Text="{Binding Code, Mode=OneWay}"
+                                             Style="{StaticResource {x:Type TextBox}}"
+                                             IsReadOnly="True"
+                                             FontFamily="{StaticResource Font.Mono}"
+                                             TextWrapping="Wrap"
+                                             AcceptsReturn="True"/>
+                                </Border>
 
-                            <TextBlock Grid.Row="2"
-                                       Text="Result"
-                                       Style="{StaticResource Text.SectionHeader}"
-                                       Margin="0,8,0,2"/>
-                            <Border Grid.Row="3" Style="{StaticResource Border.DetailBox}">
-                                <TextBox Text="{Binding Detail, Mode=OneWay}"
-                                         Style="{StaticResource {x:Type TextBox}}"
-                                         IsReadOnly="True"
-                                         FontFamily="{StaticResource Font.Mono}"
-                                         TextWrapping="Wrap"
-                                         AcceptsReturn="True"/>
-                            </Border>
-                        </Grid>
-                    </Expander>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+                                <TextBlock Grid.Row="2"
+                                           Text="Result"
+                                           Style="{StaticResource Text.SectionHeader}"
+                                           Margin="0,8,0,2"/>
+                                <Border Grid.Row="3" Style="{StaticResource Border.DetailBox}">
+                                    <TextBox Text="{Binding Detail, Mode=OneWay}"
+                                             Style="{StaticResource {x:Type TextBox}}"
+                                             IsReadOnly="True"
+                                             FontFamily="{StaticResource Font.Mono}"
+                                             TextWrapping="Wrap"
+                                             AcceptsReturn="True"/>
+                                </Border>
+                            </Grid>
+                        </Expander>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
     </Grid>
 </UserControl>
