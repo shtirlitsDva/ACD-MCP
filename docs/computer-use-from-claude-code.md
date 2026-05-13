@@ -169,6 +169,44 @@ $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invok
 **Use `Process.MainWindowTitle` only as a last resort** — Win11 UWP apps (Notepad, Calculator) run under a stub PID; the visible window belongs to a different PID. AutoCAD itself is fine; its PID matches its window.
 </powershell-uia-fallback>
 
+<bridge-side-iteration>
+The `<reload-the-plugin-procedure>` below covers reloading the **plugin** inside AutoCAD (DevReload's collectible ALC, `Acd.Mcp.dll`). It does NOT cover the **bridge** — `Acd.Mcp.Bridge.exe` is a separate process that Claude Code's MCP transport spawns, talks to over stdio, and resolves from its plugin cache (`~/.claude/plugins/cache/acd-mcp/.../bin/`). Bridge-side iteration has its own gotchas:
+
+<gotcha id="cache-vs-bin">
+**The running bridge runs from the cache, not from `bin/` at repo root.** `.mcp.json`'s `${CLAUDE_PLUGIN_ROOT}` resolves to the cache; the cache is a snapshot taken at `/plugin install` time. A fresh `dotnet publish` to the repo's `bin/` does NOT update the running bridge. To activate a rebuilt bridge:
+
+```powershell
+pwsh scripts/Refresh-PluginCache.ps1 -Publish   # publish + copy bin/ -> cache/
+# then in Claude Code:
+/reload-plugins
+```
+
+`Refresh-PluginCache.ps1` handles the copy across all cache version subdirs. The `-Publish` flag chains the `dotnet publish` step so a single command refreshes the iteration loop. See `<v3-h2>` in `CRASH_TEST_V3_JOURNAL.md` for the original finding.
+</gotcha>
+
+<gotcha id="killing-bridge-disconnects-session">
+**Killing `Acd.Mcp.Bridge.exe` from outside permanently disconnects the in-session Claude Code MCP server.** The MCP harness does NOT auto-respawn the bridge on a tool-call attempt after the child process dies; the four `mcp__plugin_acd-mcp_acd-mcp__*` tools are silently removed from the available-tool list and stay gone until the user runs `/reload-plugins`. An agentic loop cannot self-trigger that command.
+
+**Symptom:** `ToolSearch` returns "no longer available (their MCP server disconnected)" for the acd-mcp tools after the bridge process exits, and subsequent calls fail with `No such tool available`.
+
+**Workarounds, in order of preference:**
+
+1. **Don't kill the bridge.** Refresh the cache (`Refresh-PluginCache.ps1`) and call `/reload-plugins` instead — the harness will gracefully tear down + respawn.
+
+2. **For an AFK / agentic loop, drive the plugin via the direct pipe.** The plugin's named pipe (`\\.\pipe\acd-mcp-<PID>`) is independent of the bridge process — Civil 3D can stay running with the pipe open across bridge restarts. `scripts/Invoke-AcdMcpPipe.ps1` is a one-call PowerShell helper that speaks the wire format directly:
+
+   ```powershell
+   $pid = Get-Process acad | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -ExpandProperty Id -First 1
+   pwsh scripts/Invoke-AcdMcpPipe.ps1 -AcadPid $pid -Method 'execute' `
+        -Params @{ code = 'return Doc.Name;' }
+   ```
+
+   Same surface as the MCP tools (`execute`, `batch.proposeScript`, `batch.runTest`, `batch.getSelection`, `repl.proposeScript`, etc.) but without the MCP-server middleman. Note that the discriminated-error shape from the BatchPropose / BatchRunTest / BatchGetSelection tools (`<v3-g4>`) is added by the BRIDGE — calling the pipe directly returns the raw plugin response (`result` on success, `error` envelope on failure).
+
+3. **Future structural fix (not in this repo):** Claude Code's MCP transport could auto-respawn a child process on observed disconnect. See `<v3-h1>` in the v3 crash-test journal — that's where the bug report against Anthropic lives if you want to chase it.
+</gotcha>
+</bridge-side-iteration>
+
 <reload-the-plugin-procedure>
 DevReload hot-swaps the plugin's isolated ALC. The procedure for an iteration loop:
 

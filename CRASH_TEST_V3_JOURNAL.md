@@ -63,6 +63,14 @@ Observed concretely this session: at 12:34 the agent killed PIDs 49744+50516 to 
 4. **Document the constraint, work around with a direct-pipe harness for bridge-side iteration.** Cheap. The pipe-client recipe is already shown in this journal; a more durable home is `docs/computer-use-from-claude-code.md` under a new `<bridge-side-iteration>` subsection.
 
 Option 4 is the right call short-term. Option 1 is the structural fix.
+
+**RESOLVED via documented workaround (2026-05-13):** `scripts/Invoke-AcdMcpPipe.ps1` ships the productionized direct-pipe client. A new `<bridge-side-iteration>` section in `docs/computer-use-from-claude-code.md` documents the constraint and walks the iteration loop:
+1. Edit bridge source.
+2. `pwsh scripts/Refresh-PluginCache.ps1 -Publish` (combined publish + cache copy — closes [[#v3-h2]]).
+3. `/reload-plugins` in Claude Code (the unavoidable user-side step — the harness still does not auto-respawn on bridge disconnect).
+4. For AFK / agentic loops that can't `/reload-plugins`, drive the plugin via `scripts/Invoke-AcdMcpPipe.ps1` directly — same RPC surface as the MCP tools but bypasses the bridge entirely.
+
+The structural fix (option 1, Claude Code transport auto-respawn) remains an open feature request against Anthropic; nothing about this codebase blocks it.
 </v3-h1>
 
 <v3-h2 id="v3-h2">
@@ -86,6 +94,10 @@ Copy-Item "$src\Acd.Mcp.Bridge.dll" "$cache\Acd.Mcp.Bridge.dll" -Force
 3. **Build-Release.ps1 also refreshes the cache** when run on a dev machine where the cache exists. Easy. Doesn't cover the "I just built locally" case unless the developer remembers to also run the script.
 
 Option 3 is the right minimum. Option 1 is the structural fix.
+
+**FIXED (2026-05-13):** `scripts/Refresh-PluginCache.ps1` shipped. The script enumerates every `~/.claude/plugins/cache/acd-mcp/acd-mcp/<version>/bin/` and copies the repo's `bin/` over it. With `-Publish`, it also runs `dotnet publish src/Acd.Mcp.Bridge -c Release -o bin/` first, so a single command refreshes the iteration loop. Warns when live bridges are running under the refreshed cache (their old code stays in memory until `/reload-plugins`).
+
+Build-Release.ps1 was NOT modified — its job is "build + assemble + zip a release", not "refresh local cache". `Refresh-PluginCache.ps1` is the dev-loop counterpart. Both share the underlying `dotnet publish bin/` step.
 </v3-h2>
 
 </new-findings>
@@ -154,11 +166,13 @@ Two new tests pin the H3 invariants: `ProposeFromAgent_OnCleanEditor_InlinePromo
 
 <summary>
 
-**V2 closure:** all 9 V2 gremlins are FIXED at source. G2/G3/G9 are end-to-end verified through Civil 3D PID 4732. G4 is verified at source + diagnose; the live agent-side observation pin needs the user to run `/reload-plugins` once they're back at the keyboard.
+**V2 closure:** all 9 V2 gremlins are FIXED at source. G2/G3/G9 verified end-to-end through Civil 3D PID 4732. **G4 verified end-to-end** via direct bridge stdio (`scripts/Verify-BridgeG4.ps1`) on PID 40972: wire response is a normal tool result (IsError=False) with `{ok:false, error_code:"-32603", error_message:"BATCH palette is not open. ..."}` in `result.content[0].text`. No `/reload-plugins` was needed — the bridge process is spawned directly so the check is reproducible in any agentic loop.
 
 **V3 regression sweep:** 7 probes across the V1 + V2 surfaces, 0 regressions.
 
-**New gremlins (H1, H2):** both about the iteration loop, not the code surface. Together they say: hot-reloading the bridge dll mid-conversation is currently a paper-cut, not a workflow. The direct-pipe harness sidesteps both for the rest of this loop and is documented in this journal.
+**Operational gremlins (H1, H2):** both RESOLVED.
+- **H2**: `scripts/Refresh-PluginCache.ps1` (publish + copy bin/ → cache) closes the cache-drift gap.
+- **H1**: `scripts/Invoke-AcdMcpPipe.ps1` (direct pipe client) ships the documented workaround. Docs section `<bridge-side-iteration>` added to `docs/computer-use-from-claude-code.md`. Structural Claude Code auto-respawn remains an upstream-only feature request and is captured here in case anyone files it.
 
 **Post-merge gremlin (H3):** the new (and the existing batch) `propose_script` path returned ok ~300 ms before the mirror file was actually on disk. **FIXED and verified — clean-editor proposals inline-promote (sync flush); dirty-editor proposals retain the staging-and-prompt model.** Propose-to-mirror-on-disk shrunk from ~395 ms to <20 ms. See `<v3-h3>` for evidence and design.
 
