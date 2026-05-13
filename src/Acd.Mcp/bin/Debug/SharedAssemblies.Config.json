@@ -1,0 +1,11 @@
+{
+  "sharedAssemblies": [
+    "Acd.Mcp.Api",
+    "Acd.Mcp.Contracts"
+  ],
+  "mixedModeAssemblies": [],
+  "streamedAssemblies": [
+    "Acd.Mcp.Api",
+    "Acd.Mcp.Contracts"
+  ]
+}

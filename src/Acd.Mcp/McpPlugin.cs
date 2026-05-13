@@ -34,7 +34,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v18-contracts-split-g6-fixed";
+        private const string Version = "v19-drop-civil-imports-from-batch";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).

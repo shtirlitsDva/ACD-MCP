@@ -178,6 +178,8 @@ The script's emitted IL only ever references `Acd.Mcp.Api` and `Acd.Mcp.Contract
 This is the same defect F13 fixed for the REPL (the action was "drop `Autodesk.Civil.*` imports from REPL default set"), but the fix wasn't propagated to the BATCH runtime's `WithImports(...)`. Mirroring the REPL's import set — i.e. drop the `Autodesk.Civil.*` lines from `BatchScriptRuntime.BuildOptions` — closes G9.
 
 Until then, batch script bodies must spell `Autodesk.AutoCAD.DatabaseServices.Entity` in full whenever they need it. The crashtest-v2-noop body in the verification run does exactly that.
+
+**FIXED (v19-drop-civil-imports-from-batch):** the three `Autodesk.Civil.*` lines are removed from `BatchScriptRuntime.BuildOptions()`. Batch script bodies can now name `Entity` unqualified. Scripts that genuinely need Civil 3D types still work — they just have to spell the full `Autodesk.Civil.*` path, exactly like the REPL after F13.
 </g9>
 
 </new-findings>

@@ -32,6 +32,13 @@ namespace Acd.Mcp.Batch.Runtime
             // Acd.Mcp.Contracts. Both assemblies are loaded into the default
             // (non-collectible) ALC via DevReload's streamedAssemblies list,
             // so the script's emitted IL never references a collectible type.
+            // No Autodesk.Civil.* imports: those namespaces define their
+            // own `Entity` type which collides with
+            // Autodesk.AutoCAD.DatabaseServices.Entity, producing CS0104
+            // for any unqualified `Entity` usage. F13 (v1) dropped Civil
+            // imports for the REPL; G9 (v2) is the same change for BATCH.
+            // Scripts that genuinely need Civil 3D types qualify them with
+            // the full Autodesk.Civil.* path.
             return ScriptOptions.Default
                 .WithReferences(RoslynReferences.Build(typeof(AcadBatchGlobals)))
                 .WithImports(
@@ -43,10 +50,7 @@ namespace Acd.Mcp.Batch.Runtime
                     "Acd.Mcp.Batch",
                     "Autodesk.AutoCAD.DatabaseServices",
                     "Autodesk.AutoCAD.Geometry",
-                    "Autodesk.AutoCAD.Runtime",
-                    "Autodesk.Civil",
-                    "Autodesk.Civil.DatabaseServices",
-                    "Autodesk.Civil.DatabaseServices.Styles")
+                    "Autodesk.AutoCAD.Runtime")
                 .WithAllowUnsafe(false)
                 .WithOptimizationLevel(OptimizationLevel.Debug);
         }

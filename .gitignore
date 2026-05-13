@@ -16,6 +16,25 @@ x86/
 # repo. Refreshed by scripts/Build-Release.ps1. *.pdb stays excluded globally.
 !/bin/
 !/bin/**
+
+# Exception: SharedAssemblies.Config.json is checked in because it is the
+# source of truth for which assemblies DevReload must stream into the default
+# (non-collectible) ALC. A fresh clone + dotnet build won't produce this
+# file, so without tracking it the v18 G6 fix (Acd.Mcp.Contracts split)
+# silently regresses to the v17 broken state. See G8 in CRASH_TEST_V2_JOURNAL.md.
+#
+# Git's "ignored directory" rule means we have to un-ignore each level of
+# the path explicitly, then re-ignore the directory contents, then un-ignore
+# the one file. The result: only SharedAssemblies.Config.json is tracked
+# inside the otherwise-ignored bin/ trees.
+!src/Acd.Mcp/bin/
+src/Acd.Mcp/bin/*
+!src/Acd.Mcp/bin/Debug/
+!src/Acd.Mcp/bin/Release/
+src/Acd.Mcp/bin/Debug/*
+src/Acd.Mcp/bin/Release/*
+!src/Acd.Mcp/bin/Debug/SharedAssemblies.Config.json
+!src/Acd.Mcp/bin/Release/SharedAssemblies.Config.json
 [Ll]og/
 [Ll]ogs/
 bld/
