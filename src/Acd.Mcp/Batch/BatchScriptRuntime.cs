@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Acd.Mcp.Batch;
+using Acd.Mcp.Scripting;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Scripting;
 
@@ -19,22 +20,24 @@ namespace Acd.Mcp.Batch.Runtime
 
         public static ScriptOptions BuildOptions()
         {
-            var refs = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .ToArray();
-
-            // The script body sees xDb / xTx / ctx via AcadBatchGlobals. We
-            // import the AutoCAD namespaces so unqualified `Database`,
-            // `Transaction`, `Entity`, etc. resolve. Application /
-            // ApplicationServices imports are deliberately omitted at the
-            // namespace level — the spec wants compile-time enforcement
-            // that batch bodies never reach for the live document. (The
-            // namespace IS technically importable, but the globals don't
-            // expose Document / Editor / Application, so any attempt will
-            // surface as an undefined-name error at compile time.)
+            // Use RoslynReferences.Build — handles both file-based and
+            // byte-loaded assemblies (DevReload's IsolatedPluginContext loads
+            // plugin assemblies with empty Location). Anchoring on
+            // typeof(AcadBatchGlobals) ensures the globals assembly is
+            // referenced even when AppDomain.GetAssemblies() hasn't enumerated it.
+            //
+            // KNOWN LIMITATION (G6 in v2 crash-test journal): even with refs
+            // resolved correctly, batch scripts STILL fail at run-time because
+            // the Roslyn-compiled assembly lives in a NON-COLLECTIBLE scripting
+            // ALC, but AcadBatchGlobals and IBatchContext live in COLLECTIBLE
+            // DevReload-managed ALCs (Acd.Mcp.dll, Acd.Mcp.Batch.dll). The CLR
+            // forbids non-collectible → collectible references, so script IL
+            // fails to load with "non-collectible assembly may not reference
+            // collectible assembly". Full fix requires moving AcadBatchGlobals
+            // + IBatchContext + supporting types to the default (non-collectible)
+            // ALC. See journal for the structural-refactor plan.
             return ScriptOptions.Default
-                .WithReferences(refs)
+                .WithReferences(RoslynReferences.Build(typeof(AcadBatchGlobals)))
                 .WithImports(
                     "System",
                     "System.Collections.Generic",

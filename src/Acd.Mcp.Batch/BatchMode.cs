@@ -9,8 +9,7 @@ namespace Acd.Mcp.Batch
     }
 
     // Two-phase sequencing: when the user picks Live, the runner first does a
-    // complete Test pass, then a complete Live pass. Test-only runs do just
-    // the Test phase.
+    // complete Test pass, then a complete Live pass.
     public enum BatchPhase
     {
         Test,

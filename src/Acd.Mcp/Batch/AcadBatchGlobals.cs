@@ -13,10 +13,6 @@ namespace Acd.Mcp.Batch.Runtime
     // (`xDb`, `xTx`, `ctx`) so the script body in the docs is the script
     // body the runtime sees.
     //
-    // This type does NOT live in Acd.Mcp.Batch because the runtime stays
-    // AutoCAD-free. It lives here, in the plugin assembly, alongside the
-    // host that produces it.
-    //
     // Compile-time enforcement: the batch globals deliberately do NOT
     // expose Application / Document / Editor. A batch script that tries
     // to touch `Application` fails to compile with a clear diagnostic.

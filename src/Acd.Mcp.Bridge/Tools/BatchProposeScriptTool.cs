@@ -73,5 +73,10 @@ namespace Acd.Mcp.Bridge.Tools
     // asynchronously to the RPC return). The agent should warn the user that
     // their in-flight edits are about to be replaced. The user's actual Yes/No
     // is NOT reported here — it can't be: the dialog is async to the RPC.
-    public sealed record BatchProposeResult(bool ok, string saved_as, string name, bool replaced_dirty);
+    //
+    // Nullable so System.Text.Json's WhenWritingDefault on the MCP server's
+    // side doesn't silently drop the `false` case. See G3 in the v2 crash-test
+    // journal — before this change, the agent only ever saw three fields
+    // (ok / saved_as / name) and could never observe the dirty state.
+    public sealed record BatchProposeResult(bool ok, string saved_as, string name, bool? replaced_dirty);
 }

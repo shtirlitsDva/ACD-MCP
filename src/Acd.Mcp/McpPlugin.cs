@@ -34,7 +34,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v11-dto-batch-api-split";
+        private const string Version = "v17-reverted-keep-g2-g3";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -85,6 +85,26 @@ namespace Acd.Mcp
 
                 SafeBoundary.Info("Initialize", $"{Version} (PID {Process.GetCurrentProcess().Id}, log: {SafeBoundary.LogFile})");
                 EditorMessage($"[ACD-MCP] Initialize() {Version} @ {DateTime.Now:HH:mm:ss}");
+
+                // Force-load the AECC PropertyData assembly so PropertySetProvider's
+                // type probe (run when EnsureDtoGraph builds the composite) can find
+                // the AECC types. AutoCAD lazy-loads AecPropDataMgd; without this
+                // nudge, ACD-MCP boots before AECC and PropertySetProvider self-
+                // disables ("vanilla AutoCAD"), turning the plugin's headline
+                // Civil 3D feature into block-attributes-only. See G2 in the v2
+                // crash-test journal.
+                //
+                // Type.GetType("...PropertyDataServices, AecPropDataMgd") returns
+                // null on vanilla AutoCAD — that's the genuine "vanilla" case and
+                // PropertySetProvider correctly reports it. On Civil 3D / Map 3D /
+                // MEP this call is sufficient to bring the AECC managed wrapper
+                // into the AppDomain.
+                SafeBoundary.Run("McpPlugin.Initialize/probe-AECC", () =>
+                {
+                    Type.GetType(
+                        "Autodesk.Aec.PropertyData.DatabaseServices.PropertyDataServices, AecPropDataMgd",
+                        throwOnError: false);
+                });
             });
         }
 
