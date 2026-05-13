@@ -55,8 +55,13 @@ namespace Acd.Mcp.Batch.Ui
                 {
                     if (!_disposed)
                     {
-                        IsDirty = true;
+                        // Propagate to the editor FIRST so editor.IsDirty
+                        // flips true before any consumer (e.g. an RPC
+                        // arriving on a thread-pool thread reading
+                        // _executor.IsDirty for replaced_dirty) can
+                        // observe a stale-clean state.
                         _executor.OnEditorTextChanged(value);
+                        IsDirty = true;
                     }
                 }
             }
@@ -86,7 +91,6 @@ namespace Acd.Mcp.Batch.Ui
         bool IBatchUiState.Recurse => Recurse;
         IReadOnlyList<string> IBatchUiState.CurrentSelection => Files.ToArray();
         BatchOnFailure IBatchUiState.OnFailure => OnFailure;
-        bool IBatchUiState.IsDirty => IsDirty;
 
         public BatchViewModel(BatchExecutor executor)
         {
@@ -104,11 +108,15 @@ namespace Acd.Mcp.Batch.Ui
             UpdateStatus();
         }
 
-        // Bypass IsDirty side-effect: agent push + Manage-Scripts Load.
-        private void SetScriptWithoutDirtyFlag(string value)
+        // Sync the VM's display text to a value that came from a load
+        // (agent proposal accepted, or Manage-Scripts Load), WITHOUT
+        // re-entering the user-typed path that would flip the editor's
+        // IsDirty back to true. The ScriptEditor side has already been
+        // updated by the caller (via ProposeFromAgent / LoadFromSaved),
+        // so this is purely a VM-side display refresh.
+        private void SetVmTextFromLoad(string value)
         {
-            if (SetProperty(ref _currentScript, value, nameof(CurrentScript)))
-                _executor.OnEditorTextChanged(value);
+            SetProperty(ref _currentScript, value, nameof(CurrentScript));
         }
 
         [RelayCommand]
@@ -188,14 +196,21 @@ namespace Acd.Mcp.Batch.Ui
                         MessageBoxImage.Warning);
                     if (choice != MessageBoxResult.Yes) return;
                 }
-                SetScriptWithoutDirtyFlag(saved.Body);
+                // Drive the ScriptEditor's clean-load path (clears its
+                // IsDirty + syncs slot/mirror); then refresh the VM's
+                // display field without re-entering the typed setter.
+                _executor.ScriptEditor.LoadFromSaved(saved);
+                SetVmTextFromLoad(saved.Body);
                 IsDirty = false;
             });
 
-        private void OnScriptProposed(object? sender, BatchScriptProposed evt)
+        private void OnScriptProposed(object? sender, ScriptProposedEvent evt)
             => Marshal(() =>
             {
                 // Unsaved-edits race resolution per spec, option (a): prompt.
+                // The proposal is staged in ScriptEditor.PendingProposal — the
+                // editor's CurrentText + mirror still hold what the user is
+                // editing, so we can compare against the VM's display safely.
                 if (IsDirty && CurrentScript != evt.Saved.Body)
                 {
                     var choice = MessageBox.Show(
@@ -203,9 +218,18 @@ namespace Acd.Mcp.Batch.Ui
                         "Script proposed by agent",
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Question);
-                    if (choice != MessageBoxResult.Yes) return;
+                    if (choice != MessageBoxResult.Yes)
+                    {
+                        _executor.ScriptEditor.DiscardPending();
+                        return;
+                    }
                 }
-                SetScriptWithoutDirtyFlag(evt.Saved.Body);
+                // Promote pending → current inside the ScriptEditor; this
+                // is the one place where the editor's slot + mirror are
+                // updated by an agent proposal, and only after the user
+                // (or the no-prompt path) has accepted.
+                _executor.ScriptEditor.AcceptPending();
+                SetVmTextFromLoad(evt.Saved.Body);
                 IsDirty = false;
             });
 

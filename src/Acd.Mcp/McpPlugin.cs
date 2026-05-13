@@ -47,6 +47,16 @@ namespace Acd.Mcp
         private static BatchExecutor? _batchExecutor;
         private static BatchRpcHandler? _batchRpc;
 
+        // Shared script-store + per-flavor ScriptEditor instances.
+        // SavedScriptStore is filesystem-backed and stateless — a single
+        // instance routes Batch / Repl reads to the correct subfolder
+        // via the flavor parameter. The ScriptEditor owns its
+        // EditorBuffer (mirror file) lifetime; no separate field is
+        // needed at the plugin level. Phase 1: only BATCH is wired
+        // here; the REPL editor is added in Phase 2.
+        private static SavedScriptStore? _scriptStore;
+        private static ScriptEditor? _batchScriptEditor;
+
         // DTO graph. Built once in TryEnsureCore; the same registry feeds both
         // the JsonSerializerOptions (passed to ScriptSession) and the loader
         // (called for ReloadAll / Refresh). _dtoDiagnostics is shared with
@@ -133,6 +143,16 @@ namespace Acd.Mcp
             SafeBoundary.Run("McpPlugin.Terminate/batchExecutor.Dispose", () => _batchExecutor?.Dispose());
             _batchExecutor = null;
             _batchRpc = null;
+
+            // ScriptEditor owns the EditorBuffer (BatchExecutor.Dispose
+            // intentionally does NOT touch them). Disposing the editor
+            // flushes the mirror's pending write and tears down its
+            // debounce timer. SavedScriptStore is stateless; nothing
+            // to dispose.
+            SafeBoundary.Run("McpPlugin.Terminate/batchScriptEditor.Dispose",
+                () => _batchScriptEditor?.Dispose());
+            _batchScriptEditor = null;
+            _scriptStore = null;
 
             _executor = null;
             _log = null;
@@ -274,7 +294,15 @@ namespace Acd.Mcp
                     _session = new ScriptSession(replGlobals, _dtoJsonOptions);
                 }
                 _executor ??= new AcadExecutor(_mainSync, _session, _log);
-                _batchExecutor ??= new BatchExecutor();
+
+                // ScriptEditor wiring: one shared store; per-flavor
+                // editor (which owns its EditorBuffer). The BATCH editor
+                // is owned at the plugin level so the same instance is
+                // seen by the palette, the RPC handlers, and Terminate.
+                _scriptStore ??= new SavedScriptStore();
+                _batchScriptEditor ??= new ScriptEditor(
+                    ScriptFlavor.Batch, _scriptStore, new EditorBuffer());
+                _batchExecutor ??= new BatchExecutor(_batchScriptEditor);
                 reason = "";
                 return true;
             }

@@ -70,8 +70,12 @@ namespace Acd.Mcp.Batch.Runtime
             // user's actual Yes/No can't be reported synchronously here
             // because the dialog is dispatcher-marshalled and the RPC
             // call returns first.
+            //
+            // Read IsDirty from the executor (which forwards to the
+            // shared ScriptEditor — single source of truth) rather than
+            // the UI state. Same logic now applies on the REPL side.
             bool willPromptForReplace =
-                _uiState.IsDirty && !string.Equals(_executor.CurrentScript, body, StringComparison.Ordinal);
+                _executor.IsDirty && !string.Equals(_executor.CurrentScript, body, StringComparison.Ordinal);
 
             var saved = _executor.ProposeScript(name, body, summary);
             return new
@@ -200,7 +204,7 @@ namespace Acd.Mcp.Batch.Runtime
         }
 
         private object HandleGetEditor() =>
-            new { body = _executor.CurrentScript, mirror_path = _executor.Editor.MirrorPath };
+            new { body = _executor.CurrentScript, mirror_path = _executor.MirrorPath };
 
         private object HandleGetSelection()
         {
@@ -249,13 +253,14 @@ namespace Acd.Mcp.Batch.Runtime
         }
     }
 
-    // The UI owns folder / mask / file list + on-failure policy + the
-    // editor's dirty flag. The pipe queries via this narrow read-only
-    // surface; the WPF view-model implements it.
+    // The UI owns folder / mask / file list + on-failure policy. The
+    // pipe queries via this narrow read-only surface; the WPF
+    // view-model implements it.
     //
-    // IsDirty surfaces so propose_script can tell the agent up-front
-    // whether the user is about to be prompted about an overwrite —
-    // see F19 in the crash-test journal.
+    // The editor's dirty flag used to live here too (F19 in the
+    // crash-test journal) — now that ScriptEditor is the single source
+    // of truth, BatchRpcHandler reads IsDirty directly from the
+    // executor and the same shape applies on the REPL side.
     public interface IBatchUiState
     {
         string CurrentFolder { get; }
@@ -263,6 +268,5 @@ namespace Acd.Mcp.Batch.Runtime
         bool Recurse { get; }
         IReadOnlyList<string> CurrentSelection { get; }
         BatchOnFailure OnFailure { get; }
-        bool IsDirty { get; }
     }
 }

@@ -28,24 +28,35 @@ namespace Acd.Mcp.Batch.Runtime
         private readonly AcadDrawingHost _drawingHost = new();
         private readonly IFileAccessProbe _probe = new DefaultFileAccessProbe();
 
+        // Editor concerns (saved-scripts store, current text slot, IsDirty,
+        // mirror file, propose-vs-typing race) live in the shared deep
+        // module ScriptEditor. BatchExecutor delegates the public surface
+        // that callers historically used (Scripts / Editor / CurrentScript /
+        // ProposeScript / OnEditorTextChanged / ScriptProposed) to it, so
+        // BatchRpcHandler / BatchViewModel / ManageScriptsViewModel keep
+        // working without changes.
+        private readonly ScriptEditor _editor;
+
         private readonly object _runLock = new();
         private CancellationTokenSource? _activeCts;
         private Task<BatchRunReport>? _activeRun;
 
-        public SavedScriptStore Scripts { get; }
+        public ScriptEditor ScriptEditor => _editor;
+        public SavedScriptStore Scripts => _editor.Store;
         public BatchRunHistory History { get; }
-        public EditorBuffer Editor { get; }
+        // The mirror file path used to live behind a separate EditorBuffer
+        // property exposed by BatchExecutor. ScriptEditor now owns the
+        // mirror; expose only the path through this thin façade so the
+        // RPC handler doesn't need to reach into the editor.
+        public string MirrorPath => _editor.MirrorPath;
+        public string CurrentScript => _editor.CurrentText;
+        public bool IsDirty => _editor.IsDirty;
 
-        // The authoritative current script content. Both agent (via
-        // ProposeScript) and user (via the palette editor) write to it.
-        // Notified on change so the UI can sync.
-        private string _currentScript = "";
-        public string CurrentScript
+        public event EventHandler<ScriptProposedEvent>? ScriptProposed
         {
-            get { lock (_runLock) return _currentScript; }
+            add    => _editor.ScriptProposed += value;
+            remove => _editor.ScriptProposed -= value;
         }
-
-        public event EventHandler<BatchScriptProposed>? ScriptProposed;
         public event EventHandler<BatchFileResult>? FileCompleted;
         public event EventHandler<BatchRunReport>? RunCompleted;
 
@@ -54,12 +65,19 @@ namespace Acd.Mcp.Batch.Runtime
             get { lock (_runLock) return _activeRun is { IsCompleted: false }; }
         }
 
-        public BatchExecutor()
+        // The injected ScriptEditor must be configured with Flavor=Batch.
+        // The editor owns the mirror file's lifetime; BatchExecutor does
+        // not Dispose it (McpPlugin disposes the editor at shutdown).
+        public BatchExecutor(ScriptEditor editor)
         {
+            if (editor is null) throw new ArgumentNullException(nameof(editor));
+            if (editor.Flavor != ScriptFlavor.Batch)
+                throw new ArgumentException(
+                    $"BatchExecutor requires a ScriptEditor with Flavor=Batch (got {editor.Flavor}).",
+                    nameof(editor));
+            _editor = editor;
             _scriptHost = BatchScriptRuntime.CreateHost();
-            Scripts = new SavedScriptStore();
             History = new BatchRunHistory();
-            Editor = new EditorBuffer();
         }
 
         // Agent path: write the script to the saved store (overwriting if a
@@ -67,33 +85,16 @@ namespace Acd.Mcp.Batch.Runtime
         // either accepts immediately (clean) or prompts the user via the
         // UI's unsaved-edits race resolution.
         //
-        // Returns the path on disk so the caller can echo it back.
+        // Returns the saved record so the caller can echo the path back.
         public SavedScript ProposeScript(string name, string body, string? summary)
-        {
-            var saved = Scripts.Save(ScriptFlavor.Batch, name, body, summary);
-
-            // Update the current-script slot. The UI subscribes to
-            // ScriptProposed and decides what to do (accept silently if no
-            // unsaved edits, otherwise prompt).
-            BatchScriptProposed evt;
-            lock (_runLock)
-            {
-                evt = new BatchScriptProposed(saved, _currentScript);
-                _currentScript = saved.Body;
-            }
-            Editor.SetText(saved.Body);
-            ScriptProposed?.Invoke(this, evt);
-            return saved;
-        }
+            => _editor.ProposeFromAgent(name, body, summary);
 
         // The palette's editor calls this on text change to keep the
-        // current-script slot in sync. No event is raised — this IS the
-        // user typing, so no one needs to be notified.
+        // current-script slot in sync and to flip IsDirty=true. No event
+        // is raised — this IS the user typing, so no one needs to be
+        // notified.
         public void OnEditorTextChanged(string text)
-        {
-            lock (_runLock) _currentScript = text;
-            Editor.SetText(text);
-        }
+            => _editor.OnUserTyped(text);
 
         // Agent path: kick off a test-mode run against the given files.
         // The agent does NOT supply the script body — the executor uses the
@@ -116,13 +117,14 @@ namespace Acd.Mcp.Batch.Runtime
         {
             CancellationTokenSource cts;
             Task<BatchRunReport> task;
-            string body;
             string runId = NewRunId();
+            // ScriptEditor's slot has its own lock; snapshot the body
+            // first, then take the run lock for the active-run state.
+            var body = _editor.CurrentText;
             lock (_runLock)
             {
                 if (_activeRun is { IsCompleted: false })
                     throw new InvalidOperationException("A batch run is already in progress. Cancel it first.");
-                body = _currentScript;
                 cts = new CancellationTokenSource();
                 _activeCts = cts;
                 task = RunCoreAsync(body, files, mode, runId, cts.Token, onFailure);
@@ -224,7 +226,8 @@ namespace Acd.Mcp.Batch.Runtime
             {
                 lock (_runLock) _activeCts?.Cancel();
             });
-            SafeBoundary.Run("BatchExecutor.Dispose/editor", () => Editor.Dispose());
+            // ScriptEditor (and its mirror) is owned by McpPlugin and
+            // disposed there alongside the other shared instances.
         }
 
         private sealed class SyncProgress<T> : IProgress<T>
@@ -235,8 +238,4 @@ namespace Acd.Mcp.Batch.Runtime
         }
     }
 
-    // Raised when ProposeScript runs. The UI looks at the proposed body
-    // vs the editor's current content and decides whether to silently
-    // accept (no unsaved edits) or prompt the user (dirty).
-    public sealed record BatchScriptProposed(SavedScript Saved, string PreviousEditorText);
 }
