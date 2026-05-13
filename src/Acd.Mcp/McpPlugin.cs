@@ -34,7 +34,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v19-drop-civil-imports-from-batch";
+        private const string Version = "v20-debug-idle-autostart";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -105,15 +105,51 @@ namespace Acd.Mcp
                         "Autodesk.Aec.PropertyData.DatabaseServices.PropertyDataServices, AecPropDataMgd",
                         throwOnError: false);
                 });
+
+#if DEBUG
+                // DEBUG-only auto-start: open the named pipe as soon as the
+                // command loop is idle. Lets agentic verification flows (and
+                // /Automation-launched Civil 3D, where no human can type
+                // ACDMCP_START) skip the manual start step.
+                //
+                // Production (Release) builds keep the existing
+                // user-controlled behaviour — listener is opened only when
+                // the user types ACDMCP_START / ACDMCP_PALETTE.
+                //
+                // Hook removes itself on first fire. Terminate also -= to
+                // cover the "plugin unloaded before Idle ever fired" case,
+                // otherwise AutoCAD would retain a delegate into an
+                // unloaded collectible ALC.
+                Application.Idle += AutoStartOnceOnIdle;
+#endif
             });
         }
+
+#if DEBUG
+        private static void AutoStartOnceOnIdle(object? sender, EventArgs e)
+        {
+            Application.Idle -= AutoStartOnceOnIdle;
+            SafeBoundary.Run("McpPlugin.AutoStartOnceOnIdle", () => Start());
+        }
+#endif
 
         public void Terminate()
         {
             // Terminate MUST NOT throw — DevReload's unload path needs to complete
             // for the ALC to actually unload. Each tear-down step is isolated so
             // one failure cannot skip the next.
-            //
+
+#if DEBUG
+            // If Initialize subscribed AutoStartOnceOnIdle but Idle never
+            // fired (e.g. user unloaded immediately), -= now so AutoCAD
+            // doesn't retain a delegate into the about-to-unload ALC.
+            // -= against an unsubscribed method group is a no-op.
+            SafeBoundary.Run("McpPlugin.Terminate/idle-autostart", () =>
+            {
+                Application.Idle -= AutoStartOnceOnIdle;
+            });
+#endif
+
             // Close() is only meaningful when the palette is currently visible —
             // and Autodesk's base PaletteSet has been observed to NRE when its
             // wrapped Window is half-initialised (palette never shown, or user
