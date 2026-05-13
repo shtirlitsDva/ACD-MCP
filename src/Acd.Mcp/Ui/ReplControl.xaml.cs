@@ -1,5 +1,6 @@
 using System.Windows.Controls;
 using System.Xml;
+using Acd.Mcp.Batch;
 using Acd.Mcp.Pipe;
 using Acd.Mcp.Scripting;
 using ICSharpCode.AvalonEdit.Highlighting;
@@ -28,14 +29,22 @@ namespace Acd.Mcp.Ui
         private readonly ReplViewModel _vm;
         private bool _suppressSync;
 
-        public ReplControl(AcadExecutor executor, ScriptSession session, ExecutionLog log)
+        public ReplControl(AcadExecutor executor, ScriptSession session, ExecutionLog log, ScriptEditor scriptEditor)
         {
             InitializeComponent();
 
-            _vm = new ReplViewModel(executor, session, log);
+            _vm = new ReplViewModel(executor, session, log, scriptEditor);
             DataContext = _vm;
 
             ApplyDarkSyntax();
+
+            // Seed AvalonEdit from the VM BEFORE wiring TextChanged.
+            // The VM constructor pulled the editor's CurrentText into
+            // _currentCode (so a pre-existing slot from prior sessions
+            // is preserved). If we wired TextChanged first, this
+            // assignment would route through the typed setter and
+            // flip IsDirty wrong on a fresh palette open.
+            Editor.Text = _vm.CurrentCode;
 
             Editor.TextChanged += OnEditorTextChanged;
             _vm.PropertyChanged += OnVmPropertyChanged;

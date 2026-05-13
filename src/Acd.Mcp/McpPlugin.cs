@@ -5,6 +5,7 @@ using Acd.Mcp.Batch;
 using Acd.Mcp.Batch.Runtime;
 using Acd.Mcp.Data;
 using Acd.Mcp.Pipe;
+using Acd.Mcp.Repl;
 using Acd.Mcp.Scripting;
 using Acd.Mcp.Serialization;
 using Acd.Mcp.Ui;
@@ -46,6 +47,27 @@ namespace Acd.Mcp
         private static SynchronizationContext? _mainSync;
         private static BatchExecutor? _batchExecutor;
         private static BatchRpcHandler? _batchRpc;
+
+        // Shared script-store + per-flavor ScriptEditor instances.
+        // SavedScriptStore is filesystem-backed and stateless — a single
+        // instance routes Batch / Repl reads to the correct subfolder
+        // via the flavor parameter. Each ScriptEditor owns its
+        // EditorBuffer (mirror file) lifetime; no separate field is
+        // needed at the plugin level. Both editors are created at
+        // TryEnsureCore so the REPL palette and the repl.* RPC handler
+        // can see the same instance regardless of which is set up first.
+        private static SavedScriptStore? _scriptStore;
+        private static ScriptEditor? _batchScriptEditor;
+        private static ScriptEditor? _replScriptEditor;
+        private static ReplRpcHandler? _replRpc;
+
+        // Path of the REPL editor's mirror file. The BATCH editor keeps
+        // the legacy %LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx path
+        // (preserves published skills/docs); REPL gets a sibling file.
+        private static string ReplMirrorPath => System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Acd.Mcp",
+            "repl-buffer.csx");
 
         // DTO graph. Built once in TryEnsureCore; the same registry feeds both
         // the JsonSerializerOptions (passed to ScriptSession) and the loader
@@ -170,6 +192,20 @@ namespace Acd.Mcp
             _batchExecutor = null;
             _batchRpc = null;
 
+            // ScriptEditors own their EditorBuffers (BatchExecutor.Dispose
+            // intentionally does NOT touch them). Disposing each editor
+            // flushes its mirror's pending write and tears down its
+            // debounce timer. SavedScriptStore is stateless; nothing
+            // to dispose.
+            SafeBoundary.Run("McpPlugin.Terminate/batchScriptEditor.Dispose",
+                () => _batchScriptEditor?.Dispose());
+            SafeBoundary.Run("McpPlugin.Terminate/replScriptEditor.Dispose",
+                () => _replScriptEditor?.Dispose());
+            _batchScriptEditor = null;
+            _replScriptEditor = null;
+            _replRpc = null;
+            _scriptStore = null;
+
             _executor = null;
             _log = null;
             _session = null;
@@ -205,9 +241,11 @@ namespace Acd.Mcp
                 return;
             }
 
-            // The batch RPC handler needs a IBatchUiState provider; until the
-            // palette is opened we fall back to an empty stub so agent calls
-            // that depend on UI state fail loudly with a clear message.
+            // The batch + repl RPC handlers are wired at ACDMCP_PALETTE time
+            // — both throw a clear "palette is not open" error from the
+            // pipe dispatcher (ExtraRpcMethodHandler) until then, so agent
+            // calls fail loudly with actionable guidance instead of
+            // silently succeeding against a non-existent UI.
             _listener ??= new PipeListener(_executor!, ExtraRpcMethodHandler);
             _listener.Start();
             EditorMessage($"[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.");
@@ -255,20 +293,36 @@ namespace Acd.Mcp
                 return;
             }
 
-            _palette ??= new ReplPaletteSet(_executor!, _session!, _log!, _batchExecutor!);
+            _palette ??= new ReplPaletteSet(_executor!, _session!, _log!, _batchExecutor!, _replScriptEditor!);
             // The BATCH tab's view-model implements IBatchUiState; once the
             // palette exists, route the batch RPC handler at it so the agent
             // can query the user's current folder + mask + file selection.
             _batchRpc = new BatchRpcHandler(_batchExecutor!, _palette.BatchViewModel);
+            // The REPL RPC handler is wired here too so propose calls fail
+            // before the palette is open (no UI to display the staged
+            // proposal). The handler doesn't need a VM — it operates on
+            // the ScriptEditor directly — but gating on palette-open keeps
+            // the agent's experience symmetric with BATCH and avoids the
+            // "silent staging into the void" failure mode.
+            _replRpc = new ReplRpcHandler(_replScriptEditor!);
             _palette.Visible = true;
         });
 
-        // Listener-side method dispatch. Two prefixes are handled here:
+        // Listener-side method dispatch. Three prefixes are handled here:
         //   batch.* — routed to _batchRpc (requires the palette to be open).
+        //   repl.*  — routed to _replRpc  (requires the palette to be open
+        //             — see ShowPalette's note on staging-into-the-void).
         //   dto.*   — routed to _dtoRpc   (always available once the DTO
         //             graph is built; doesn't need the palette).
         private static Task<object?> ExtraRpcMethodHandler(string method, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken ct)
         {
+            if (method.StartsWith("repl."))
+            {
+                if (_replRpc is null)
+                    throw new InvalidOperationException(
+                        "REPL palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
+                return _replRpc.DispatchAsync(method, parameters, ct);
+            }
             if (method.StartsWith("batch."))
             {
                 if (_batchRpc is null)
@@ -310,7 +364,27 @@ namespace Acd.Mcp
                     _session = new ScriptSession(replGlobals, _dtoJsonOptions);
                 }
                 _executor ??= new AcadExecutor(_mainSync, _session, _log);
-                _batchExecutor ??= new BatchExecutor();
+
+                // ScriptEditor wiring: one shared store; per-flavor
+                // editor (each owns its EditorBuffer). Both editors are
+                // owned at the plugin level so the same instances are
+                // seen by the palette, the RPC handlers, and Terminate.
+                // REPL gets a sibling mirror path so the agent's
+                // "read-the-mirror-before-proposing" convention works
+                // independently for each flavor.
+                _scriptStore ??= new SavedScriptStore();
+                _batchScriptEditor ??= new ScriptEditor(
+                    ScriptFlavor.Batch, _scriptStore, new EditorBuffer());
+                _replScriptEditor ??= new ScriptEditor(
+                    ScriptFlavor.Repl, _scriptStore, new EditorBuffer(ReplMirrorPath));
+                _batchExecutor ??= new BatchExecutor(_batchScriptEditor);
+                // _replRpc is intentionally NOT constructed here — it's
+                // wired in ShowPalette() so a propose call that arrives
+                // before the palette is open fails loudly with the same
+                // "open the palette" guidance the BATCH path gives.
+                // Otherwise a proposal would stage successfully and the
+                // user would never see it (no VM subscribed to the
+                // ScriptProposed event).
                 reason = "";
                 return true;
             }

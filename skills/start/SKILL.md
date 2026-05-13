@@ -13,9 +13,21 @@ The user clicks `ACDMCP_START` (or it's autoloaded) to open the pipe. The user o
 </what-this-plugin-is>
 
 <two-modes>
-1. **REPL** — `autocad_execute_csharp(code, timeout_ms?)`. Run snippets against the active drawing. See `<repl-conventions>`.
+1. **REPL** — two paths:
+   * `autocad_execute_csharp(code, timeout_ms?)` runs snippets directly against the active drawing. Doesn't touch the palette editor. Use this for everything: information gathering, one-shot edits, anything the user hasn't asked to review.
+   * `autocad_repl_propose_script(name, script_body, input_summary?)` stages a script in the REPL palette editor for the user to review and (optionally) edit before running. See sibling `/acd-mcp:repl` for the workflow and rules.
 2. **BATCH** — multi-file edits via the `autocad_batch_*` tools and `acd-mcp://batch-runs/last`. See sibling `/acd-mcp:batch` for the full workflow and rules.
 </two-modes>
+
+<which-skill-when>
+Pick the sibling skill from the **shape of the task**, not from keywords:
+
+* User wants you to **inspect, modify, or report on the drawing that's currently open** ("edit this drawing", "change layer X on this dwg", "list all blocks named FOO on this drawing", "fix this thing in the model") → REPL territory. For ad-hoc work just call `autocad_execute_csharp` directly. Load **`/acd-mcp:repl`** when the user explicitly wants to review/edit the script before it runs, or when you're iterating on a longer script they want to keep.
+
+* User wants the **same change applied across multiple `.dwg` files in a folder** ("set transparency=0 on every drawing in this folder", "renumber viewframes across all sheets", "for every file matching *_SHT.dwg, ...") → load **`/acd-mcp:batch`** and follow its Test → hand-off → Live workflow.
+
+The active drawing is the tell: one drawing = REPL, many drawings = BATCH. If the user is ambiguous, ask before loading a sibling skill — pulling in the wrong one wastes context.
+</which-skill-when>
 
 <repl-conventions>
 Globals in scope for every `autocad_execute_csharp` call:
@@ -101,12 +113,14 @@ Batch-specific rules live in `/acd-mcp:batch` — load that skill before doing a
 | DTO user folder (yours and the user's) | `%APPDATA%\Acd.Mcp\dto-user\` |
 | Saved REPL scripts | `%APPDATA%\Acd.Mcp\scripts\repl\<name>.csx` |
 | Saved batch scripts | `%APPDATA%\Acd.Mcp\scripts\batch\<name>.csx` |
-| Live editor mirror (read before proposing) | `%LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx` |
+| REPL editor mirror (read before `repl.proposeScript`) | `%LOCALAPPDATA%\Acd.Mcp\repl-buffer.csx` |
+| BATCH editor mirror (read before `batch.proposeScript`) | `%LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx` |
 | Batch-run history | `%LOCALAPPDATA%\Acd.Mcp\batch-runs\<timestamp>_<run_id>.json` |
 | Plugin diagnostic log | `%LOCALAPPDATA%\Acd.Mcp\log.txt` |
 </file-locations>
 
 <sibling-skills>
+* **`/acd-mcp:repl`** — the propose-to-editor workflow for the REPL: when to propose vs when to just run directly, the read-mirror-before-proposing rule, the dirty-edit race contract. Load when the user wants to review/edit a REPL script before running it.
 * **`/acd-mcp:batch`** — the full workflow for authoring, Test-iterating, and handing off batch scripts. Use whenever the user wants to apply a change across a folder of `.dwg` files.
 * **`/acd-mcp:add-dto`** — write or override a DTO when REPL emits `{"$unsupported":"..."}` or when the default projection of a type is too thin.
 </sibling-skills>
