@@ -26,7 +26,12 @@ namespace Acd.Mcp
         public static string? LogFile => _logFile;
 
         // Idempotent. Safe to call from plugin Initialize even if a prior load
-        // already installed the hooks (we'd just no-op).
+        // already installed the file-logging path (we'd just no-op).
+        //
+        // Process-level event hooks (TaskScheduler.UnobservedTaskException) are
+        // NOT installed here — McpPlugin owns that via ResourceManager so the
+        // subscription can be unhooked on Terminate and the collectible ALC
+        // can actually unload.
         public static void EnsureInitialized()
         {
             if (_logFile is null)
@@ -45,20 +50,34 @@ namespace Acd.Mcp
                     // have Trace and the editor.
                 }
             }
+        }
 
-            if (!_processHooksInstalled)
-            {
-                _processHooksInstalled = true;
+        // Hook TaskScheduler.UnobservedTaskException with a named handler so
+        // Terminate can unhook it. The guard makes this idempotent across the
+        // DevReload re-init that follows an unload.
+        //
+        // Why this matters: any anonymous lambda subscribed to a process-
+        // lifetime delegate (TaskScheduler, AutoCAD's Application.Idle,
+        // AutoCAD's main Dispatcher) captures the surrounding type and pins
+        // the collectible ALC. Hot-reload then leaks every plugin assembly.
+        internal static void HookProcessHooks()
+        {
+            if (_processHooksInstalled) return;
+            _processHooksInstalled = true;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        }
 
-                // Unobserved Task exceptions (a Task GC'd before its exception was
-                // observed) get logged instead of taking down the process on the
-                // finalizer thread.
-                TaskScheduler.UnobservedTaskException += (_, e) =>
-                {
-                    Report(e.Exception, "TaskScheduler.UnobservedTaskException");
-                    e.SetObserved();
-                };
-            }
+        internal static void UnhookProcessHooks()
+        {
+            if (!_processHooksInstalled) return;
+            _processHooksInstalled = false;
+            TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+        }
+
+        private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            Report(e.Exception, "TaskScheduler.UnobservedTaskException");
+            e.SetObserved();
         }
 
         public static void Run(string context, Action body)

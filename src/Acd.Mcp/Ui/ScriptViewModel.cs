@@ -92,12 +92,11 @@ namespace Acd.Mcp.Ui
 
             // Last-line safety net for anything that bubbles up to the
             // dispatcher (binding errors, async-void unhandled
-            // exceptions, etc.).
-            _dispatcher.UnhandledException += (_, e) =>
-            {
-                SafeBoundary.Report(e.Exception, "WPF Dispatcher.UnhandledException");
-                e.Handled = true;
-            };
+            // exceptions, etc.). Named handler — must be -= in Dispose
+            // because _dispatcher is AutoCAD's process-lifetime main
+            // Dispatcher and would otherwise pin this VM (and the
+            // collectible plugin ALC through it) for the AutoCAD session.
+            _dispatcher.UnhandledException += OnDispatcherUnhandled;
 
             // Seed with anything that was already in the log when the
             // palette opened (e.g. MCP calls that happened before the
@@ -286,6 +285,12 @@ namespace Acd.Mcp.Ui
             StatusLine = $"{total} entries  ({mcp} MCP, {script} SCRIPT)";
         }
 
+        private void OnDispatcherUnhandled(object? sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            SafeBoundary.Report(e.Exception, "WPF Dispatcher.UnhandledException");
+            e.Handled = true;
+        }
+
         public void Dispose()
         {
             if (_disposed) return;
@@ -294,6 +299,7 @@ namespace Acd.Mcp.Ui
             {
                 _log.EntryAdded -= OnEntryAdded;
                 _scriptEditor.ScriptProposed -= OnScriptProposed;
+                _dispatcher.UnhandledException -= OnDispatcherUnhandled;
             });
         }
     }

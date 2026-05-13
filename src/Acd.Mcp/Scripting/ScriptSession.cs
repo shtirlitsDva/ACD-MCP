@@ -17,7 +17,13 @@ namespace Acd.Mcp.Scripting
     //
     // Reset() drops the state; Roslyn-emitted assemblies from previous calls remain
     // loaded in the default ALC for the process lifetime (acceptable; documented).
-    public sealed class ScriptSession
+    //
+    // Implements IDisposable so the plugin can register it with the central
+    // ResourceManager and have its state dropped on Terminate alongside the
+    // other long-lived resources. Dispose() delegates to Reset() — there are
+    // no unmanaged handles, only the accumulated ScriptState chain that we
+    // want released for GC.
+    public sealed class ScriptSession : IDisposable
     {
         private readonly AcadGlobals _globals;
         private readonly JsonSerializerOptions? _jsonOptions;
@@ -98,6 +104,8 @@ namespace Acd.Mcp.Scripting
             _state = null;
             _options = BuildOptions();
         }
+
+        public void Dispose() => Reset();
 
         // Best-effort: a serializer error must never break the REPL response.
         // The most common failure mode is touching a closed AutoCAD entity

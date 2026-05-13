@@ -222,10 +222,31 @@ namespace Acd.Mcp.Batch.Runtime
 
         public void Dispose()
         {
-            SafeBoundary.Run("BatchExecutor.Dispose/cancel", () =>
+            // Snapshot inside the lock, then cancel + wait outside it so we
+            // don't deadlock against the continuation (which takes the same
+            // lock to clear _activeRun / _activeCts on completion).
+            //
+            // Bounded wait mirrors PipeListener.Stop — Terminate must not
+            // block AutoCAD for long. If the run doesn't honour cancellation
+            // within 2 s, the continuation still runs (the task itself is
+            // owned by the threadpool), but Dispose returns and the rest of
+            // tear-down proceeds.
+            Task? runToWait;
+            CancellationTokenSource? ctsToCancel;
+            lock (_runLock)
             {
-                lock (_runLock) _activeCts?.Cancel();
-            });
+                runToWait = _activeRun;
+                ctsToCancel = _activeCts;
+            }
+
+            SafeBoundary.Run("BatchExecutor.Dispose/cancel", () => ctsToCancel?.Cancel());
+            SafeBoundary.Run("BatchExecutor.Dispose/wait",
+                () => runToWait?.Wait(TimeSpan.FromSeconds(2)));
+            // We deliberately do NOT dispose _activeCts here — the run's
+            // continuation owns that and disposes on settle. CTS.Dispose is
+            // safe to call multiple times, but leaving it to the
+            // continuation keeps the ownership single-rooted.
+
             // ScriptEditor (and its mirror) is owned by McpPlugin and
             // disposed there alongside the other shared instances.
         }

@@ -31,6 +31,7 @@
     <Compile Include="..\..\src\Acd.Mcp\Serialization\AcadDtoOptions.cs" Link="Sut\AcadDtoOptions.cs" />
     <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoDiagnostics.cs" Link="Sut\DtoDiagnostics.cs" />
     <Compile Include="..\..\src\Acd.Mcp\Scripting\TrailingExpressionRewriter.cs" Link="Sut\TrailingExpressionRewriter.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\ResourceManager.cs" Link="Sut\ResourceManager.cs" />
   </ItemGroup>
 
   <!-- Outcome<T> now lives in Acd.Mcp.Batch (pure net8.0 — references safely). -->

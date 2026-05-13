@@ -48,6 +48,12 @@ namespace Acd.Mcp
         private static BatchExecutor? _batchExecutor;
         private static BatchRpcHandler? _batchRpc;
 
+        // Owns every cleanup step (event unsubscribes + IDisposable
+        // teardowns). Created in Initialize, drained in Terminate. Keeps
+        // Terminate small and co-locates registration with construction so
+        // a new component cannot easily forget its unhook.
+        private static ResourceManager? _resources;
+
         // Shared script-store + per-flavor ScriptEditor instances.
         // SavedScriptStore is filesystem-backed and stateless — a single
         // instance routes Batch / Script reads to the correct subfolder
@@ -94,6 +100,17 @@ namespace Acd.Mcp
             // Initialize MUST NOT throw — DevReload (and AutoCAD's autoload path)
             // handle plugin-init failure poorly. We capture everything and report.
             SafeBoundary.EnsureInitialized();
+            _resources = new ResourceManager(SafeBoundary.Run);
+
+            // TaskScheduler.UnobservedTaskException is a process-lifetime
+            // event in the default ALC; a lambda subscriber would pin our
+            // collectible ALC forever. The named-handler hook + matching
+            // unhook (registered with the ResourceManager) lets Terminate
+            // release that pin.
+            _resources.RegisterEvent("SafeBoundary.ProcessHooks",
+                subscribe: SafeBoundary.HookProcessHooks,
+                unsubscribe: SafeBoundary.UnhookProcessHooks);
+
             SafeBoundary.Run("McpPlugin.Initialize", () =>
             {
                 // Initialize() runs on AutoCAD's main thread, which has a
@@ -139,11 +156,14 @@ namespace Acd.Mcp
                 // user-controlled behaviour — listener is opened only when
                 // the user types ACDMCP_START / ACDMCP_PALETTE.
                 //
-                // Hook removes itself on first fire. Terminate also -= to
-                // cover the "plugin unloaded before Idle ever fired" case,
-                // otherwise AutoCAD would retain a delegate into an
-                // unloaded collectible ALC.
-                Application.Idle += AutoStartOnceOnIdle;
+                // Hook removes itself on first fire. Terminate's
+                // ResourceManager also -= to cover the "plugin unloaded
+                // before Idle ever fired" case (Application.Idle is
+                // process-lifetime in the default ALC, so a leftover
+                // subscription would pin our collectible ALC).
+                _resources!.RegisterEvent("Application.Idle/AutoStart",
+                    subscribe: () => Application.Idle += AutoStartOnceOnIdle,
+                    unsubscribe: () => Application.Idle -= AutoStartOnceOnIdle);
 #endif
             });
         }
@@ -158,55 +178,22 @@ namespace Acd.Mcp
 
         public void Terminate()
         {
-            // Terminate MUST NOT throw — DevReload's unload path needs to complete
-            // for the ALC to actually unload. Each tear-down step is isolated so
-            // one failure cannot skip the next.
+            // Terminate MUST NOT throw — DevReload's unload path needs to
+            // complete for the ALC to actually unload. ResourceManager.Dispose
+            // wraps each registered step in SafeBoundary.Run, so a single
+            // failure cannot skip the rest. Static fields are nulled so the
+            // next DevReload cycle starts from a clean slate.
+            _resources?.Dispose();
+            _resources = null;
 
-#if DEBUG
-            // If Initialize subscribed AutoStartOnceOnIdle but Idle never
-            // fired (e.g. user unloaded immediately), -= now so AutoCAD
-            // doesn't retain a delegate into the about-to-unload ALC.
-            // -= against an unsubscribed method group is a no-op.
-            SafeBoundary.Run("McpPlugin.Terminate/idle-autostart", () =>
-            {
-                Application.Idle -= AutoStartOnceOnIdle;
-            });
-#endif
-
-            // Close() is only meaningful when the palette is currently visible —
-            // and Autodesk's base PaletteSet has been observed to NRE when its
-            // wrapped Window is half-initialised (palette never shown, or user
-            // manually closed it). The Visible guard avoids the spurious log
-            // entry; Dispose() still handles full teardown either way.
-            SafeBoundary.Run("McpPlugin.Terminate/palette.Close", () =>
-            {
-                if (_palette is { Visible: true }) _palette.Close();
-            });
-            SafeBoundary.Run("McpPlugin.Terminate/palette.Dispose", () => _palette?.Dispose());
             _palette = null;
-
-            SafeBoundary.Run("McpPlugin.Terminate/listener.Stop",    () => _listener?.Stop());
-            SafeBoundary.Run("McpPlugin.Terminate/listener.Dispose", () => _listener?.Dispose());
             _listener = null;
-
-            SafeBoundary.Run("McpPlugin.Terminate/batchExecutor.Dispose", () => _batchExecutor?.Dispose());
             _batchExecutor = null;
             _batchRpc = null;
-
-            // ScriptEditors own their EditorBuffers (BatchExecutor.Dispose
-            // intentionally does NOT touch them). Disposing each editor
-            // flushes its mirror's pending write and tears down its
-            // debounce timer. SavedScriptStore is stateless; nothing
-            // to dispose.
-            SafeBoundary.Run("McpPlugin.Terminate/batchScriptEditor.Dispose",
-                () => _batchEditor?.Dispose());
-            SafeBoundary.Run("McpPlugin.Terminate/scriptScriptEditor.Dispose",
-                () => _scriptEditor?.Dispose());
             _batchEditor = null;
             _scriptEditor = null;
             _scriptRpc = null;
             _scriptStore = null;
-
             _executor = null;
             _log = null;
             _session = null;
@@ -247,7 +234,15 @@ namespace Acd.Mcp
             // pipe dispatcher (ExtraRpcMethodHandler) until then, so agent
             // calls fail loudly with actionable guidance instead of
             // silently succeeding against a non-existent UI.
-            _listener ??= new PipeListener(_executor!, ExtraRpcMethodHandler);
+            if (_listener is null)
+            {
+                _listener = new PipeListener(_executor!, ExtraRpcMethodHandler);
+                // Two steps: Stop() then Dispose(). Each in its own
+                // SafeBoundary so a Stop failure can't skip the Dispose.
+                // Register Dispose first so LIFO runs Stop → Dispose.
+                _resources!.Register("listener.Dispose", _listener);
+                _resources!.RegisterAction("listener.Stop", () => _listener?.Stop());
+            }
             _listener.Start();
             EditorMessage($"[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.");
         });
@@ -294,7 +289,20 @@ namespace Acd.Mcp
                 return;
             }
 
-            _palette ??= new ScriptPaletteSet(_executor!, _session!, _log!, _batchExecutor!, _scriptEditor!);
+            if (_palette is null)
+            {
+                _palette = new ScriptPaletteSet(_executor!, _session!, _log!, _batchExecutor!, _scriptEditor!);
+                // Two steps in LIFO: register Dispose first so Close runs
+                // before Dispose on tear-down. The Visible guard preserves
+                // the original Terminate behaviour — Autodesk's base
+                // PaletteSet has been observed to NRE on Close() when its
+                // wrapped Window is half-initialised.
+                _resources!.Register("palette.Dispose", _palette);
+                _resources!.RegisterAction("palette.Close", () =>
+                {
+                    if (_palette is { Visible: true }) _palette.Close();
+                });
+            }
             // The BATCH tab's view-model implements IBatchUiState; once the
             // palette exists, route the batch RPC handler at it so the agent
             // can query the user's current folder + mask + file selection.
@@ -363,6 +371,13 @@ namespace Acd.Mcp
                     // AcdReplApi for the why.
                     var replGlobals = new AcadGlobals(new AcdReplApi(_dataProviderApi!));
                     _session = new ScriptSession(replGlobals, _dtoJsonOptions);
+                    // Registered so Terminate releases the accumulated
+                    // ScriptState chain (variable bindings, captured trees)
+                    // alongside the other long-lived resources. Roslyn-emitted
+                    // submission assemblies still live in the default ALC for
+                    // process lifetime — that's a documented Roslyn property,
+                    // not our leak.
+                    _resources!.Register("session", _session);
                 }
                 _executor ??= new AcadExecutor(_mainSync, _session, _log);
 
@@ -373,12 +388,29 @@ namespace Acd.Mcp
                 // REPL gets a sibling mirror path so the agent's
                 // "read-the-mirror-before-proposing" convention works
                 // independently for each flavor.
+                //
+                // Each ScriptEditor owns its EditorBuffer (the mirror file +
+                // debounce timer). Disposing the editor flushes the pending
+                // write and tears down the timer. SavedScriptStore is
+                // filesystem-backed and stateless — nothing to dispose.
                 _scriptStore ??= new SavedScriptStore();
-                _batchEditor ??= new ScriptEditor(
-                    ScriptFlavor.Batch, _scriptStore, new EditorBuffer());
-                _scriptEditor ??= new ScriptEditor(
-                    ScriptFlavor.Script, _scriptStore, new EditorBuffer(ScriptMirrorPath));
-                _batchExecutor ??= new BatchExecutor(_batchEditor);
+                if (_batchEditor is null)
+                {
+                    _batchEditor = new ScriptEditor(
+                        ScriptFlavor.Batch, _scriptStore, new EditorBuffer());
+                    _resources!.Register("batchEditor", _batchEditor);
+                }
+                if (_scriptEditor is null)
+                {
+                    _scriptEditor = new ScriptEditor(
+                        ScriptFlavor.Script, _scriptStore, new EditorBuffer(ScriptMirrorPath));
+                    _resources!.Register("scriptEditor", _scriptEditor);
+                }
+                if (_batchExecutor is null)
+                {
+                    _batchExecutor = new BatchExecutor(_batchEditor);
+                    _resources!.Register("batchExecutor", _batchExecutor);
+                }
                 // _scriptRpc is intentionally NOT constructed here — it's
                 // wired in ShowPalette() so a propose call that arrives
                 // before the palette is open fails loudly with the same
@@ -410,6 +442,13 @@ namespace Acd.Mcp
 
             _dtoRegistry = new DtoRegistry();
             _dtoDiagnostics = new DtoDiagnostics();
+            // Belt-and-suspenders: nulling the static fields in Terminate is
+            // sufficient to make the registry instances unreachable, but an
+            // explicit Clear() drops every projection delegate (and any
+            // captured plugin-ALC closures inside them) right away rather
+            // than waiting for GC to find the right ref count.
+            _resources!.RegisterAction("dtoRegistry.Clear", () => _dtoRegistry?.Clear());
+            _resources!.RegisterAction("dtoDiagnostics.Clear", () => _dtoDiagnostics?.Clear());
             var providers = EntityDataProviders.CreateDefault();
             // Adapt the Outcome-based internal provider to the delegate pair
             // DtoDataProviderApi takes. The collapse of Outcome → null at
