@@ -10,7 +10,7 @@ namespace Acd.Mcp.Bridge.Tools
     // This is the agent's view of "what would run RIGHT NOW if I called
     // autocad_batch_run_test against the current selection". The user owns
     // these inputs — the agent cannot set them. Use the returned list to
-    // sample one or two representative drawings via REPL sideload before
+    // sample one or two representative drawings via SCRIPT sideload before
     // proposing a script (see /acd-mcp:batch workflow step 2).
     //
     // Annotation matrix per the spec's <agent-tool-surface>:

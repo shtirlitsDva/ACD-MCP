@@ -1,8 +1,8 @@
 namespace Acd.Mcp.Bridge.Tools
 {
-    // Shared shape returned by BOTH propose-script tools (batch + repl)
+    // Shared shape returned by BOTH propose-script tools (batch + script)
     // — same approach for like tasks. The plugin side returns identical
-    // JSON for batch.proposeScript and repl.proposeScript, so a single
+    // JSON for batch.proposeScript and script.proposeScript, so a single
     // record is the right abstraction.
     //
     // `replaced_dirty` is the agent's signal that the editor had unsaved
