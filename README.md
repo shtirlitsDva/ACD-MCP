@@ -113,7 +113,7 @@ Two commands. Then a single PowerShell script for the AutoCAD side.
    /plugin install acd-mcp@acd-mcp
    ```
 
-   That registers `Bridge.exe` in Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces three skills: `/acd-mcp:start`, `/acd-mcp:batch`, `/acd-mcp:add-dto`.
+   That registers `Bridge.exe` in Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces four skills: `/acd-mcp:start`, `/acd-mcp:repl`, `/acd-mcp:batch`, `/acd-mcp:add-dto`.
 
    > `Bridge.exe` and its .NET 8 dependencies are committed to `bin/` at the repo root. Claude Code's marketplace install only fetches what's in git, so the binary lives there. `scripts/Build-Release.ps1` refreshes `bin/` and reminds the maintainer to commit. Users get it just by `/plugin install` — no separate download.
 
@@ -212,7 +212,7 @@ So `git tag v0.2.0 && git push --tags` is sufficient to cut a release — no man
 | `ACDMCP_STOP` | Stop the listener. |
 | `ACDMCP_STATUS` | Report listener state, PID, pipe name, session state. |
 | `ACDMCP_RESET` | Drop the script session — variables/usings declared so far are gone. |
-| `ACDMCP_PALETTE` | Open the dockable REPL palette (AvalonEdit + C# highlighting + live execution log). Shares the script session with the MCP, so `var x = 5` typed in the palette is visible to the LLM's next `autocad_execute_csharp` call, and vice versa. |
+| `ACDMCP_PALETTE` | Open the dockable palette with two tabs — **REPL** (AvalonEdit + C# highlighting + live execution log, shares the script session with the MCP so `var x = 5` typed in the palette is visible to the LLM's next `autocad_execute_csharp` call, and vice versa) and **BATCH** (folder + mask + file list + Test/Live slide-switch + Manage Scripts). Wiring the palette also activates the `batch.*` and `repl.*` plugin RPC methods (`autocad_batch_*` / `autocad_repl_propose_script` MCP tools require it). |
 
 ### Palette / WPF note
 
@@ -232,25 +232,43 @@ Same text is also echoed to AutoCAD's command line and to `System.Diagnostics.Tr
 
 ## MCP surface
 
-Four tools, four resources. Tool annotations follow the MCP spec (`ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`).
+Five tools, four resources. Tool annotations follow the MCP spec (`ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`).
+
+### Response shape (batch tools + repl-propose tool)
+
+`autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_batch_get_selection`, and `autocad_repl_propose_script` all return a **discriminated success-shape**. Always check `ok` first:
+
+```
+{ ok: true,  ...payload fields..., error_code: null, error_message: null }   # success
+{ ok: false, error_code: "<numeric>", error_message: "<plugin text>",
+  ...payload fields all null }                                                # failure
+```
+
+The bridge never throws on plugin-rejected failures — those used to be stripped to a generic "An error occurred invoking ..." by the MCP SDK. The plugin's verbatim message now travels on the success path in `error_message`. Typical `ok: false` cases: palette not open, no folder/mask selected, empty editor buffer. See `CRASH_TEST_V2_JOURNAL.md#g4` for the design rationale.
+
+`autocad_execute_csharp` is the exception — it returns its own structured `ExecuteResult` (`success` / `stdout` / `stderr` / `diagnostics`), not the discriminated shape. Snippet failures already travel inside the success envelope (compile errors → `diagnostics`; runtime exceptions → `stderr`); no thrown path needs wrapping.
 
 ### Tools
 
 * **`autocad_execute_csharp(code, timeout_ms?)`** — *not-read-only, destructive, not-idempotent, open-world.*
 
-  Run C# inside AutoCAD's main thread under a document lock. Globals: `Doc` (active `Document`), `Db` (`Database`), `Ed` (`Editor`), `CivilDoc` (active `CivilDocument` — null in non-Civil drawings). Full `Autodesk.AutoCAD.*` and `Autodesk.Civil.*` namespaces imported. Top-level declarations persist between calls. Returns an `ExecuteResult` with `success`, `returnValueRepr`, `diagnostics` (compile errors with file/line/col), `stdout`, `stderr`, `elapsedMs`.
+  Run C# inside AutoCAD's main thread under a document lock. Globals: `Doc` (active `Document`), `Db` (`Database`), `Ed` (`Editor`), `CivilDoc` (active `CivilDocument` — null in non-Civil drawings), `Acd` (DTO + DataProvider façade). Default imports: `System` + LINQ + IO + Text plus `Autodesk.AutoCAD.{ApplicationServices,DatabaseServices,Geometry,EditorInput,Runtime}`. `Autodesk.Civil.*` is **NOT** in the defaults — it defines its own `Entity` which would collide; add `using Autodesk.Civil.DatabaseServices;` at the top of a submission when needed. Top-level declarations persist between calls. Returns an `ExecuteResult` with `success`, `returnValueRepr`, `returnValueJson` (DTO-projected), `diagnostics`, `stdout`, `stderr`, `elapsedMs`.
 
 * **`autocad_batch_propose_script(name, script_body, input_summary?)`** — *not-read-only, not-destructive, idempotent, open-world.*
 
-  Save a batch-flavour C# script to `%APPDATA%\Acd.Mcp\scripts\batch\<name>.csx` and push it into the BATCH palette's live editor. The agent should read `%LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx` first so it doesn't trample in-progress user edits. See `/acd-mcp:batch`.
+  Save a batch-flavour C# script to `%APPDATA%\Acd.Mcp\scripts\batch\<name>.csx` and push it into the BATCH palette's live editor. The agent should read `%LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx` first so it doesn't trample in-progress user edits. Success payload: `{ saved_as, name, replaced_dirty }`. See `/acd-mcp:batch`.
 
 * **`autocad_batch_run_test(name?)`** — *read-only, not-destructive, not-idempotent, open-world.*
 
-  Kick off a TEST-mode run against the BATCH palette's currently-selected folder + mask. No-arg form runs the live editor buffer; with `name`, loads that saved script first. Test mode opens each drawing read-shared, runs inside a transaction, then rolls back — nothing on disk changes. Returns a `run_id` + `results_resource` URI. **There is no `autocad_batch_run_live`** — Live mode requires the user to flip the slide-switch and click Run in person.
+  Kick off a TEST-mode run against the BATCH palette's currently-selected folder + mask. No-arg form runs the live editor buffer; with `name`, loads that saved script first. Test mode opens each drawing read-shared, runs inside a transaction, then rolls back — nothing on disk changes. Success payload: `{ run_id, pending, results_resource, note }`. **There is no `autocad_batch_run_live`** — Live mode requires the user to flip the slide-switch and click Run in person.
 
 * **`autocad_batch_get_selection()`** — *read-only, not-destructive, idempotent, open-world.*
 
-  Return what TEST would operate on right now: `{ folder, mask, recurse, files: [...], count }`. The agent cannot change these — only the user can, via the palette.
+  Return what TEST would operate on right now. Success payload: `{ folder, mask, recurse, files: [...], count }`. The agent cannot change these — only the user can, via the palette.
+
+* **`autocad_repl_propose_script(name, script_body, input_summary?)`** — *not-read-only, not-destructive, idempotent, open-world.*
+
+  Save a repl-flavour C# script to `%APPDATA%\Acd.Mcp\scripts\repl\<name>.csx` and stage it in the REPL palette editor for the user to review/edit before running. Same response shape as the batch propose tool: `{ saved_as, name, replaced_dirty }`. On a clean editor the proposal inline-promotes (`replaced_dirty: false`); on a dirty editor the user is prompted asynchronously (`replaced_dirty: true`) — see `/acd-mcp:repl` for the full workflow. The agent should read `%LOCALAPPDATA%\Acd.Mcp\repl-buffer.csx` before calling to capture any user hand-edits.
 
 ### Resources
 
