@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using ModelContextProtocol;
+using System.Globalization;
 using ModelContextProtocol.Server;
 
 namespace Acd.Mcp.Bridge.Tools
@@ -45,23 +45,42 @@ namespace Acd.Mcp.Bridge.Tools
         {
             try
             {
-                return await _client.CallAsync<BatchSelectionResult>("batch.getSelection",
+                var p = await _client.CallAsync<BatchSelectionPayload>("batch.getSelection",
                     @params: null, ct).ConfigureAwait(false);
+                return new BatchSelectionResult(
+                    ok: true, error_code: null, error_message: null,
+                    p.folder, p.mask, p.recurse, p.files, p.count);
             }
             catch (AcadRpcException ex)
             {
-                // Typical failure here is "BATCH palette is not open" — the
-                // agent needs to read that message and tell the user to
-                // open the palette first.
-                throw new McpException(ex.Message);
+                // G4: typical failure here is "BATCH palette is not open" —
+                // surface it on the success path so the SDK doesn't strip it
+                // into a generic invocation-error string.
+                return new BatchSelectionResult(
+                    ok: false,
+                    error_code: ex.Code.ToString(CultureInfo.InvariantCulture),
+                    error_message: ex.Message,
+                    folder: null, mask: null, recurse: null, files: null, count: null);
             }
         }
     }
 
-    public sealed record BatchSelectionResult(
+    // Plugin wire shape for batch.getSelection. Bridge wraps this in
+    // BatchSelectionResult on the success path.
+    internal sealed record BatchSelectionPayload(
         string folder,
         string mask,
         bool recurse,
         string[] files,
         int count);
+
+    public sealed record BatchSelectionResult(
+        bool ok,
+        string? error_code,
+        string? error_message,
+        string? folder,
+        string? mask,
+        bool? recurse,
+        string[]? files,
+        int? count);
 }

@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using ModelContextProtocol;
+using System.Globalization;
 using ModelContextProtocol.Server;
 
 namespace Acd.Mcp.Bridge.Tools
@@ -53,20 +53,39 @@ namespace Acd.Mcp.Bridge.Tools
         {
             try
             {
-                return await _client.CallAsync<BatchRunStartedResult>("batch.runTest",
+                var p = await _client.CallAsync<BatchRunStartedPayload>("batch.runTest",
                     new { name }, ct).ConfigureAwait(false);
+                return new BatchRunStartedResult(
+                    ok: true, error_code: null, error_message: null,
+                    p.run_id, p.pending, p.results_resource, p.note);
             }
             catch (AcadRpcException ex)
             {
-                // Surface the plugin-side message — most common failure here
-                // is "No files are currently selected in the BATCH palette."
-                // or "BATCH editor buffer is empty.", both of which the
-                // agent must see to recover.
-                throw new McpException(ex.Message);
+                // G4: the MCP SDK was wrapping thrown messages into a generic
+                // "An error occurred invoking ..." string at the client. Carry
+                // the plugin-side message on the success path instead, so the
+                // agent reliably sees e.g. "No files are currently selected
+                // in the BATCH palette." and can recover.
+                return new BatchRunStartedResult(
+                    ok: false,
+                    error_code: ex.Code.ToString(CultureInfo.InvariantCulture),
+                    error_message: ex.Message,
+                    run_id: null, pending: null, results_resource: null, note: null);
             }
         }
     }
 
-    public sealed record BatchRunStartedResult(
+    // Plugin wire shape for batch.runTest. Bridge wraps this in
+    // BatchRunStartedResult on the success path.
+    internal sealed record BatchRunStartedPayload(
         string run_id, bool pending, string results_resource, string note);
+
+    public sealed record BatchRunStartedResult(
+        bool ok,
+        string? error_code,
+        string? error_message,
+        string? run_id,
+        bool? pending,
+        string? results_resource,
+        string? note);
 }

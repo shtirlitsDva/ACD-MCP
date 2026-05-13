@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using ModelContextProtocol;
+using System.Globalization;
 using ModelContextProtocol.Server;
 
 namespace Acd.Mcp.Bridge.Tools
@@ -52,17 +52,22 @@ namespace Acd.Mcp.Bridge.Tools
         {
             try
             {
+                // The plugin's wire shape already includes `ok` (true on
+                // success); deserialize directly into the result record —
+                // error_code/error_message default to null on the success path.
                 return await _client.CallAsync<BatchProposeResult>("batch.proposeScript",
                     new { name, script_body, input_summary }, ct).ConfigureAwait(false);
             }
             catch (AcadRpcException ex)
             {
-                // Surface the plugin-side message verbatim. Without this,
-                // the MCP framework wraps the throw into a generic "An error
-                // occurred invoking ..." string and the agent can't
-                // self-diagnose. McpException.Message is propagated to the
-                // remote endpoint by the SDK.
-                throw new McpException(ex.Message);
+                // G4: never throw — carry the plugin-side message on the
+                // success path so the agent reliably sees it (the MCP SDK
+                // strips thrown messages into a generic invocation-error).
+                return new BatchProposeResult(
+                    ok: false,
+                    error_code: ex.Code.ToString(CultureInfo.InvariantCulture),
+                    error_message: ex.Message,
+                    saved_as: null, name: null, replaced_dirty: null);
             }
         }
     }
@@ -78,5 +83,15 @@ namespace Acd.Mcp.Bridge.Tools
     // side doesn't silently drop the `false` case. See G3 in the v2 crash-test
     // journal — before this change, the agent only ever saw three fields
     // (ok / saved_as / name) and could never observe the dirty state.
-    public sealed record BatchProposeResult(bool ok, string saved_as, string name, bool? replaced_dirty);
+    //
+    // `error_code` + `error_message` populated only on the failure path (ok=false).
+    // See G4 in the v2 crash-test journal for the rationale (success-shape
+    // carrier instead of thrown McpException).
+    public sealed record BatchProposeResult(
+        bool ok,
+        string? error_code,
+        string? error_message,
+        string? saved_as,
+        string? name,
+        bool? replaced_dirty);
 }
