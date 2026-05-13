@@ -39,6 +39,8 @@ The agent walked every v1 finding that produced a code change and verified the f
 
 <g1 id="g1">
 **G1 [smell, LOW]** — Plugin version label `v11-dto-batch-api-split` was **not bumped** after the v1 fix pass. Both the May-12 builds (registering zero DTOs, AECC missing in `AecBaseMgd`) and the May-13 build (registering 21 DTOs, AECC "not resolvable" with the new wording) log the same string. Operators reading `log.txt` after the fact cannot tell which build a particular line came from without timestamps. Bumping to `v12-…` per release (or even per code change to `EnsureDtoGraph`/`PropertySetProvider`) would make log forensics trivial.
+
+**Convention adopted (2026-05-13):** the `McpPlugin.Version` const gets a short kebab-case slug per substantive change, monotonically incremented: v11→v18 (G6 fix) →v19 (G9 fix) →v20 (DEBUG idle hook) →v21 (batch-tools success-shape). The slug describes the change rather than incrementing a semver number, so a `git log -p src/Acd.Mcp/McpPlugin.cs` reads as the plugin's high-signal changelog. **Status: FIXED (convention) — keep bumping on each substantive change. If forgetting becomes a problem, add a release-script step that warns on un-bumped Version when bin/ is being refreshed.**
 </g1>
 
 <g2 id="g2">
@@ -53,6 +55,8 @@ The agent walked every v1 finding that produced a code change and verified the f
 The v1 fix swapped *which* assembly to probe; G2 says the probe needs to happen *when* the right one is loaded. The right fix is option 1 — make sure the right one is loaded at probe time.
 
 A useful smoke test: an integration test that boots the plugin, calls `Type.GetType("...PropertyDataServices, AecPropDataMgd", false)` before `EnsureDtoGraph`, and asserts `PropertySetProvider.IsAvailable == true` on Civil 3D. Asserting on vanilla AutoCAD that it stays `false` is the other half.
+
+**FIXED (ea21ef6, 2026-05-13):** option 1 landed — `McpPlugin.Initialize` now wraps a `Type.GetType("Autodesk.Aec.PropertyData.DatabaseServices.PropertyDataServices, AecPropDataMgd", throwOnError: false)` call inside `SafeBoundary.Run("McpPlugin.Initialize/probe-AECC", ...)`. This force-loads the managed wrapper into the AppDomain *before* `EnsureDtoGraph` builds the composite. **VERIFIED (2026-05-13 ~12:29):** fresh `/Automation` launch (PID 4732) of Civil 3D 2025 Metric logs `PropertySetProvider: AECC PropertySets available via AecPropDataMgd.` at +4 s after Initialize, and `aecc_loaded = true` via REPL inspection of `AppDomain.CurrentDomain.GetAssemblies()`. **Status: FIXED, verified.**
 </g2>
 
 <g3 id="g3">
@@ -67,6 +71,8 @@ The pipe-level `FrameIO.JsonOptions` is symmetric on both sides (`CamelCase`, `W
 3. **Serialize `replaced_dirty` as a string** (`"true"`/`"false"`). Ugly but immune to default-stripping.
 
 Option 1 is the right move — it matches "agent learned the dirty state" vs "agent didn't learn it" cleanly. Should be a 2-line change.
+
+**VERIFIED (2026-05-13 ~12:50):** wire-tested via direct named-pipe RPC (`batch.proposeScript`) against PID 4732, build `v20-debug-idle-autostart`. Response now includes `replaced_dirty: false` (snake_case wire keys, since the C# record uses snake_case property names and `JsonNamingPolicy.CamelCase` only PascalCase → camelCase, not snake → camel). Before the v17 fix, this field was silently dropped by `JsonIgnoreCondition.WhenWritingDefault` when the value was `false`; with `bool?` it survives. **Status: FIXED.**
 </g3>
 
 <g4 id="g4">
@@ -95,11 +101,17 @@ The break is at the last hop. The MCP server SDK does propagate `McpException.Me
 
 A pragmatic workaround that doesn't depend on `McpException` behaviour: make every batch tool's success path *also* the carrier for error reporting — i.e. return a discriminated result `{ ok: false, error_code: "no_selection", error_message: "..." }` and never throw. That's the shape `ExecuteCsharpTool` already uses (per the F15 action note in the actions file), and it survives any MCP-SDK quirks. Recommended.
 
-**Source fix (2026-05-13):** `BatchRunTestTool`, `BatchProposeScriptTool`, and `BatchGetSelectionTool` now never throw. Each catches `AcadRpcException` and returns the same record shape with `ok: false`, `error_code` (the JSON-RPC numeric code from the plugin envelope, as a string), and `error_message` (the verbatim plugin message). The success path returns `ok: true` with the payload fields populated and the error fields null. For run_test and get_selection the bridge wraps the plugin's existing wire shape (`*Payload` internal record) into the new public `*Result` with the discriminator prefix; for propose_script the plugin already returns `ok`, so the result record was extended in place. Full solution still builds clean; 60/60 tests pass (44 batch + 16 DTO loader). `error_code` is currently the numeric JSON-RPC code as a string, not a semantic slug like `"no_selection"` — a future improvement would have the plugin emit semantic codes, but that requires touching `Acd.Mcp.Api` (no hot-reload). **Status: FIXED (source), pending live wire verification — agent should see the plugin's actual message text on an empty-selection `autocad_batch_run_test` call rather than `"An error occurred invoking 'autocad_batch_run_test'."`.**
+**Source fix (2026-05-13):** `BatchRunTestTool`, `BatchProposeScriptTool`, and `BatchGetSelectionTool` now never throw. Each catches `AcadRpcException` and returns the same record shape with `ok: false`, `error_code` (the JSON-RPC numeric code from the plugin envelope, as a string), and `error_message` (the verbatim plugin message). The success path returns `ok: true` with the payload fields populated and the error fields null. For run_test and get_selection the bridge wraps the plugin's existing wire shape (`*Payload` internal record) into the new public `*Result` with the discriminator prefix; for propose_script the plugin already returns `ok`, so the result record was extended in place. Full solution still builds clean; 60/60 tests pass (44 batch + 16 DTO loader). `error_code` is currently the numeric JSON-RPC code as a string, not a semantic slug like `"no_selection"` — a future improvement would have the plugin emit semantic codes, but that requires touching `Acd.Mcp.Api` (no hot-reload).
+
+**Diagnose phase confirmed (2026-05-13 ~12:45):** direct named-pipe call to `batch.proposeScript` while `_batchRpc` was uninitialised returned `{ error: { code: -32603, message: "System.InvalidOperationException: BATCH palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.\r\n   at Acd.Mcp.McpPlugin.ExtraRpcMethodHandler ..." } }`. **The plugin DOES emit the message text on the wire, with full stack trace. The bridge receives it. The strip happens at the MCP-SDK / Claude Code client layer.** Confirms the journal's hypothesis and confirms the success-shape refactor is the correct fix — it carries the message on the success path, sidestepping whatever wraps thrown McpException on the client end.
+
+**Status: FIXED (source + diagnose), pending live end-to-end agent-side observation.** End-to-end verification requires the in-session MCP bridge to be respawned to pick up the recompiled `Acd.Mcp.Bridge.dll`. Killing the bridges from PowerShell to force a reload also tore down the MCP server connection for the current Claude Code session; respawn requires the user to run `/reload-plugins` (or restart Claude Code) since the harness does not auto-respawn on disconnect. Once respawned, `autocad_batch_get_selection` while the palette is closed should return `{ ok: false, error_code: "-32603", error_message: "BATCH palette is not open. ..." }` to the agent — proving end-to-end propagation.
 </g4>
 
 <g5 id="g5">
 **G5 [smell, LOW]** — The repository's `tests/Acd.Mcp.Tests` covers DTO loader compilation against a fake registry. That catches the *registration-mechanism* regression but not the *real-ALC-split* regression that F7 was originally about. The actions file calls this out (`<not-fixed>` block), and v2 doesn't add a fix. **What would be cheap:** a smoke test that asserts the plugin's `Initialize` path produces `EnsureDtoGraph: Registered N DTO types.` with `N > 0` by parsing `log.txt` after a host-shell invocation. Even one bash-level test would have caught both F7 originally and G2 today.
+
+**FIXED (scripts/Test-DtoSmoke.ps1, 2026-05-13):** `pwsh scripts/Test-DtoSmoke.ps1` (default `-MinDtoCount 1`, override e.g. `-MinDtoCount 21` for the current Civil 3D baseline). Recipe mirrors `<autonomous-bootstrap>` in docs/computer-use-from-claude-code.md: flips `Acd.Mcp.loadOnStartup` to true, launches Civil 3D 2025 with `/Automation`, tails `%LOCALAPPDATA%\Acd.Mcp\log.txt` for the `Initialize: vNN` line and the `EnsureDtoGraph: Registered N DTO types` line, asserts `N >= MinDtoCount`, then tears down: kills the agent-launched acad.exe and restores `plugins.json`. Exit 0 on pass, 1 on any failure. Live-tested on PID 4732 reading `Registered 21 DTO types` immediately; full bootstrap-+-teardown not yet exercised in CI (no self-hosted Civil 3D runner). **Status: FIXED (script delivered) — wiring into CI is gated on the QA-standardization infrastructure described in docs/computer-use-from-claude-code.md `<qa-standardization>` (self-hosted Windows runner with Civil 3D entitlement).**
 </g5>
 
 <g6 id="g6">
@@ -182,6 +194,8 @@ This is the same defect F13 fixed for the REPL (the action was "drop `Autodesk.C
 Until then, batch script bodies must spell `Autodesk.AutoCAD.DatabaseServices.Entity` in full whenever they need it. The crashtest-v2-noop body in the verification run does exactly that.
 
 **FIXED (v19-drop-civil-imports-from-batch):** the three `Autodesk.Civil.*` lines are removed from `BatchScriptRuntime.BuildOptions()`. Batch script bodies can now name `Entity` unqualified. Scripts that genuinely need Civil 3D types still work — they just have to spell the full `Autodesk.Civil.*` path, exactly like the REPL after F13.
+
+**VERIFIED (2026-05-13 ~12:55):** proposed `g9-unqualified-entity` batch body via `batch.proposeScript` containing `var e = (Entity)xTx.GetObject(id, OpenMode.ForRead);` — i.e. *unqualified* `Entity` — and ran Test mode against `crashtest-v2-dwgs/*.dwg` via reflection-driven `BatchViewModel.RunCommand`. Result: **5/5 Pass, 0 Fail, no compile diagnostics.** Pre-v19 this body would have hit `CS0104: 'Entity' is ambiguous`. **Status: FIXED, verified.**
 </g9>
 
 </new-findings>
