@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "acd-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live C# REPL plus multi-file batch runner inside a running AutoCAD 2025+ process. Drives a persistent CSharpScript session on AutoCAD's main thread, with DTO-driven JSON serialization for tidy LLM replies.",
   "author": {
     "name": "Damgaard RI"
