@@ -39,6 +39,18 @@
          installer can extract these from the bundle directly without going
          through resource enumeration. -->
     <EmbeddedResource Include="Resources\DtoSystem\*.csx" />
+
+    <!-- DevReload reads this side-by-side config next to Acd.Mcp.dll to
+         decide which assemblies to share/stream into the default
+         (non-collectible) ALC. Acd.Mcp.Api + Acd.Mcp.Contracts MUST be in
+         that list — without them, the v18 G6 fix silently regresses and
+         batch script bodies fail at compile/load time. The tracked
+         template lives next to the csproj and is copied to $(OutputPath)
+         on every build, so a fresh clone + dotnet build never produces
+         a broken bin/. See G8 in CRASH_TEST_V2_JOURNAL.md. -->
+    <None Include="SharedAssemblies.Config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
