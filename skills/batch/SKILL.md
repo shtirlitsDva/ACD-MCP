@@ -28,6 +28,50 @@ A two-stage workflow for autonomous batch edits across many AutoCAD drawings:
 `autocad_batch_run_live` tool. Don't ask, don't try.
 </what-this-skill-is-for>
 
+<response-shape>
+Every `autocad_batch_*` tool returns a **discriminated success-shape**.
+Always check `ok` first before reading payload fields.
+
+```
+# autocad_batch_propose_script
+{ ok: true,  saved_as, name, replaced_dirty,
+  error_code: null, error_message: null }
+{ ok: false, error_code: "<numeric>", error_message: "<plugin text>",
+  saved_as: null, name: null, replaced_dirty: null }
+
+# autocad_batch_run_test
+{ ok: true,  run_id, pending, results_resource, note,
+  error_code: null, error_message: null }
+{ ok: false, error_code: "<numeric>", error_message: "<plugin text>",
+  run_id: null, pending: null, results_resource: null, note: null }
+
+# autocad_batch_get_selection
+{ ok: true,  folder, mask, recurse, files, count,
+  error_code: null, error_message: null }
+{ ok: false, error_code: "<numeric>", error_message: "<plugin text>",
+  folder: null, mask: null, recurse: null, files: null, count: null }
+```
+
+The bridge never throws on plugin-rejected failures — those would be
+stripped to a generic "An error occurred invoking ..." by the MCP SDK
+(see V2-G4 in `CRASH_TEST_V2_JOURNAL.md`). Instead the plugin's message
+travels on the success path in `error_message`. Typical `ok: false`
+cases for batch tools:
+
+* "BATCH palette is not open. Run ACDMCP_PALETTE inside AutoCAD first."
+  — user hasn't opened the palette yet. Tell them.
+* "No files are currently selected in the BATCH palette. Set a folder + mask first."
+  — palette is open but no folder/mask. Tell them what to set.
+* "BATCH editor buffer is empty." — `autocad_batch_run_test()` with no
+  body proposed and no saved name. Propose first.
+
+`error_code` is the JSON-RPC numeric code from the plugin envelope,
+serialised as a string. Today it's the generic `-32603` for most plugin
+exceptions; a future change may emit semantic slugs (`no_selection`,
+`palette_closed`, …). Read `error_message` for the human content
+regardless.
+</response-shape>
+
 <the-three-globals>
 A batch script body sees exactly three globals:
 

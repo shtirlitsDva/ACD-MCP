@@ -117,9 +117,24 @@ file:
 %LOCALAPPDATA%\Acd.Mcp\repl-buffer.csx
 ```
 
-This is what the user is actually editing right now (debounced ~250ms).
+This is what the user is currently looking at in the REPL editor.
 Skipping this step means you may overwrite hand-edits the user has made
 since your last proposal.
+
+**Mirror write semantics** (see `<the-staging-model>` for the propose-time
+side):
+
+* When the **user is typing** in the WPF text-box, writes are debounced
+  ~250 ms so a flurry of keystrokes doesn't translate into a flurry of
+  disk writes.
+* When an **agent propose** lands and is accepted (clean-editor inline
+  promote, or user clicks Yes on the dirty-prompt), the mirror is
+  **sync-flushed** — the file is on disk before `autocad_repl_propose_script`
+  returns or before the prompt-accept callback completes.
+
+So: if your read directly follows the user's typing, there may be ≤250 ms
+of lag. If your read follows an agent propose, the mirror is already
+durable.
 
 The flow is:
 
@@ -134,20 +149,37 @@ If you can't read the mirror (file doesn't exist yet, permission error),
 the REPL editor is empty / fresh — proceed with the proposal.
 </read-mirror-before-proposing>
 
+<response-shape>
+`autocad_repl_propose_script` returns a **discriminated success-shape**.
+Always check `ok` first.
+
+```
+{ ok: true,  saved_as: "<path>", name: "<name>", replaced_dirty: <bool|null>,
+  error_code: null, error_message: null }                      # success
+
+{ ok: false, error_code: "<numeric>", error_message: "<plugin text>",
+  saved_as: null, name: null, replaced_dirty: null }           # failure
+```
+
+The bridge never throws on plugin-rejected failures — those would be
+stripped to a generic "An error occurred invoking ..." by the MCP SDK
+(see V2-G4 in `CRASH_TEST_V2_JOURNAL.md`). Instead the plugin's message
+travels on the success path in `error_message`. Typical `ok: false`
+case: REPL palette not open (`error_code: "-32603"`,
+`error_message: "REPL palette is not open. Run ACDMCP_PALETTE inside AutoCAD first."`).
+
+The same shape is shared with `autocad_batch_propose_script`, so the
+agent's "check `ok` first" pattern transfers between flavours.
+</response-shape>
+
 <replaced-dirty-contract>
-`autocad_repl_propose_script` returns:
+`replaced_dirty` (on the success path) is the agent's signal about what
+the user is about to experience:
 
-```
-{ ok: true, saved_as: "<path>", name: "<name>", replaced_dirty: <bool|null> }
-```
-
-`replaced_dirty` is the agent's signal about what the user is about to
-experience:
-
-* **`false` or `null`** — the editor was clean, or the proposed body
-  matches what's already in the editor. The proposal will be applied
-  silently (or has no visible effect). Nothing further to say to the
-  user.
+* **`false` or `null`** — the editor was clean. The proposal was
+  inline-promoted (see `<the-staging-model>`) — the editor's visible
+  text and the mirror file already reflect the new body when this RPC
+  returns. Nothing further to say to the user.
 
 * **`true`** — the editor had unsaved typed edits AND the new body
   differs from what the user is currently editing. The user is being
@@ -163,21 +195,27 @@ proposal."
 </replaced-dirty-contract>
 
 <the-staging-model>
-A REPL proposal does NOT immediately overwrite the editor's text. It
-**stages** the body in a pending slot inside the plugin's
-`ScriptEditor`. The editor's visible text + mirror file stay at what
-the user is editing. The UI then decides:
+The disposition of a proposal depends on whether the editor has unsaved
+user edits at propose time (see V3-H3 in `CRASH_TEST_V3_JOURNAL.md`):
 
-* **Editor was clean** → accept silently. Visible text and mirror flip
-  to the proposed body. `replaced_dirty: false`.
-* **Editor had typed edits, proposal differs** → prompt the user. If
-  Yes, promote pending → current. If No, discard pending; user's text
-  stays untouched. `replaced_dirty: true`.
+* **Editor is CLEAN (`IsDirty=false`)** — the common agent-iteration
+  case. `ScriptEditor.ProposeFromAgent` **inline-promotes**: `CurrentText`
+  becomes the saved body, the mirror file is sync-flushed (no debounce),
+  no pending slot is set. The mirror is durable on disk **before** the
+  RPC returns. `replaced_dirty: false`.
 
-This means **the mirror file always reflects what the user sees**, even
-in the brief window where a proposal is staged but not yet accepted.
+* **Editor is DIRTY (`IsDirty=true`)** — the user has typed edits we'd
+  clobber. ProposeFromAgent **stages** the body in `PendingProposal`,
+  CurrentText and the mirror stay at what the user is editing, and the
+  UI prompts the user. On Yes → AcceptPending promotes pending →
+  current (and sync-flushes the mirror). On No → DiscardPending leaves
+  the user's text untouched. `replaced_dirty: true`.
+
+**The mirror file always reflects what the user sees on screen.**
 Reading the mirror is honest — you never read your own last-proposed
-body back when the user refused it.
+body back during the brief prompt window in the dirty case, and you
+read your own proposal immediately in the clean case (because that IS
+what the user sees now).
 </the-staging-model>
 
 <repl-script-conventions>
