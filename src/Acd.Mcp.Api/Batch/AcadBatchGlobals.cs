@@ -13,6 +13,12 @@ namespace Acd.Mcp.Batch.Runtime
     // (`xDb`, `xTx`, `ctx`) so the script body in the docs is the script
     // body the runtime sees.
     //
+    // Lives in Acd.Mcp.Api (the default-ALC assembly) because the script's
+    // emitted IL must reference this type from a NON-collectible ALC. See
+    // G6 / G8 in the v2 crash-test journal for the full reasoning. Cannot
+    // live in the zero-dep Contracts assembly because the AutoCAD types
+    // Database and Transaction are not BCL.
+    //
     // Compile-time enforcement: the batch globals deliberately do NOT
     // expose Application / Document / Editor. A batch script that tries
     // to touch `Application` fails to compile with a clear diagnostic.

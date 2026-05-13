@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0 with ZERO dependencies. This assembly carries the types the
+         user's batch-script body sees at compile time (IBatchContext,
+         IStepBuilder, StepOutcome, RequirementResult, BatchPhase, BatchMode,
+         BatchOnFailure). It is intentionally tiny.
+
+         WHY: DevReload loads Acd.Mcp.dll and Acd.Mcp.Batch.dll into a
+         COLLECTIBLE AssemblyLoadContext so it can hot-reload. Roslyn loads
+         the compiled script body into a NON-COLLECTIBLE ALC. The CLR
+         forbids a non-collectible assembly from referencing a collectible
+         one. So every type whose name appears in script IL must live in
+         the default (non-collectible) ALC — i.e. in a shared/streamed
+         assembly per SharedAssemblies.Config.json. Acd.Mcp.Contracts is
+         that assembly.
+
+         Zero dependencies is mandatory: anything this assembly transitively
+         references would also need to be in the default ALC (or be a BCL
+         assembly already there). Adding even one NuGet here is a trap. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Acd.Mcp.Batch</RootNamespace>
+    <AssemblyName>Acd.Mcp.Contracts</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+</Project>

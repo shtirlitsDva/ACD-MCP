@@ -48,4 +48,15 @@
          AutoCAD refs come from the Autodesk-official package above. -->
     <PackageReference Include="Speckle.AutoCAD.API" Version="2025.0.0" ExcludeAssets="all" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- AcadBatchGlobals (the batch script's globalsType) lives in this
+         assembly because the script body sees `xDb` / `xTx` / `ctx` and the
+         fields must be from a non-collectible ALC. AcadBatchGlobals itself
+         exposes Database (xDb) and Transaction (xTx) — AutoCAD types — so
+         it cannot move into the zero-dep Acd.Mcp.Contracts. It belongs
+         here, where the AutoCAD NuGet refs already live. IBatchContext (the
+         third field) comes from Acd.Mcp.Contracts via this project ref. -->
+    <ProjectReference Include="..\Acd.Mcp.Contracts\Acd.Mcp.Contracts.csproj" />
+  </ItemGroup>
 </Project>

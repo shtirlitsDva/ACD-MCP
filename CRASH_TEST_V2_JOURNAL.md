@@ -122,6 +122,64 @@ So G6 says batch is broken for every user, not just this test. Combined with G3 
 This is a useful pattern for AFK automation: when the plugin owns the UI, every `[RelayCommand]` method is a verb already exposed to an in-process reflection client. The action item from the research above ("expose `batch_run_test` / `batch_run_live` as MCP tools") would make this the *external* MCP surface; until then, the REPL's own reflection access is the workaround. Worth documenting in the batch skill so a future agent doesn't conclude "AFK = blocked".
 </g7>
 
+<g8 id="g8">
+**G8 [BUG, CRITICAL, fixes G6]** — The full fix for G6 requires splitting the script-visible contract types into a fourth, zero-dependency assembly that DevReload streams into the default (non-collectible) ALC. This is what v12–v17 were circling without landing.
+
+**Why the simpler v15/v16 attempts failed:**
+
+* **v15 — `AssemblyLoadContext.Default.Resolving` handler.** Returned the byte-loaded `Acd.Mcp` / `Acd.Mcp.Batch` from the isolated ALC when the Default ALC asked for them. Compile succeeded, but at script-IL load: `System.NotSupportedException: A non-collectible assembly may not reference a collectible assembly.` The CLR enforces this regardless of resolver intent — the script's submission assembly is non-collectible (lives in Roslyn's `_inMemoryAssemblyContext`), and the resolver was handing back the collectible-ALC copies.
+
+* **v16 — Move `AcadBatchGlobals` to `Acd.Mcp.Api`, stream `Acd.Mcp.Batch` for `IBatchContext`.** Got past the collectibility wall (every script-visible type was now in default ALC) but hit `MissingMethodException: Void Acd.Mcp.Batch.BatchScriptHost\`1..ctor(Microsoft.CodeAnalysis.Scripting.ScriptOptions)` at `BatchScriptRuntime.CreateHost()`. Root cause: streaming `Acd.Mcp.Batch` into default ALC also brought a second copy of `Microsoft.CodeAnalysis.Scripting` into the default ALC's lookup chain. `BatchScriptHost<T>` (default-ALC) bound to default-ALC's `ScriptOptions`; `BatchScriptRuntime` (still isolated-ALC) built isolated-ALC's `ScriptOptions`. Two distinct types with the same name — the constructor lookup failed.
+
+* **Adding `Microsoft.CodeAnalysis.*` to `streamedAssemblies` to unify identities.** Made things worse: DevReload's plugin load silently aborted — no `Initialize` log line at all. Roslyn libs pull `System.Reflection.MetadataLoadContext` and other dependencies that the streamed-into-default chain couldn't satisfy. Not investigated further; treated as a dead end.
+
+**The fix (v18):**
+
+1. New project **`Acd.Mcp.Contracts`** — `net8.0`, **zero NuGet/project dependencies**. Holds the types the script body sees by name: `IBatchContext`, `IStepBuilder`, `StepOutcome`, `RequirementResult`, `BatchMode`, `BatchPhase`, `BatchOnFailure`. Namespace stays `Acd.Mcp.Batch` — namespace ≠ assembly, so no caller in `Acd.Mcp.Batch` / `Acd.Mcp` / `Acd.Mcp.Api` changes.
+
+2. **`AcadBatchGlobals`** moves to `Acd.Mcp.Api/Batch/AcadBatchGlobals.cs`. It must be in the default ALC (script IL names it via the globals type) and it needs `Database`/`Transaction`, which `Acd.Mcp.Api` already brings in. It can't go into `Acd.Mcp.Contracts` because Contracts must stay AutoCAD-free for its zero-dep invariant.
+
+3. **`Acd.Mcp.Batch.csproj` and `Acd.Mcp.Api.csproj` both `ProjectReference` Contracts.** `Acd.Mcp.Batch` keeps `BatchScriptHost<T>`, `BatchExecutor`, `BatchRunner`, `BatchContext`, `StepBuilder`, `BatchRunHistory`, `IBatchSession`, etc. — i.e. *everything* that depends on Roslyn. Acd.Mcp.Batch stays in the isolated (collectible) ALC. A collectible assembly *can* reference a non-collectible one, so `BatchExecutor` reaching for `IBatchContext` (Contracts/default) is fine.
+
+4. **`SharedAssemblies.Config.json`** lists `Acd.Mcp.Api` and `Acd.Mcp.Contracts` in both `sharedAssemblies` and `streamedAssemblies`. Streaming Contracts into default ALC is the structural enabler — its zero-dep design means no transitive collateral.
+
+**Why this works and v16 didn't:**
+
+| | v16 | v18 |
+|---|---|---|
+| AcadBatchGlobals home | default (Api) | default (Api) |
+| IBatchContext home | default (streamed Acd.Mcp.Batch) | default (streamed Acd.Mcp.Contracts) |
+| BatchScriptHost home | default (streamed) | isolated (still in Acd.Mcp.Batch) |
+| Microsoft.CodeAnalysis | duplicated across ALCs | single copy in isolated |
+| ScriptOptions identity | mismatch | single |
+
+The script's emitted IL only ever references `Acd.Mcp.Api` and `Acd.Mcp.Contracts`. Both are in the default ALC. No collectibility violation. No `Microsoft.CodeAnalysis` duplication. `BatchScriptHost<AcadBatchGlobals>` constructed from `Acd.Mcp.Batch` (isolated) uses isolated-ALC's `ScriptOptions` against isolated-ALC's host — identical types, ctor found.
+
+**Verified end-to-end (v18-contracts-split-g6-fixed, 2026-05-13 ~10:55):**
+
+- Solution build clean (0 warnings, 0 errors).
+- `Acd.Mcp.Batch.Tests`: 44/44 pass.
+- ALC arrangement at runtime confirmed via REPL: `Acd.Mcp.Api` and `Acd.Mcp.Contracts` are in `Default` ALC (`api_streamed=true`, `contracts_streamed=true`). `Acd.Mcp` and `Acd.Mcp.Batch` are in `PluginIsolated::Acd.Mcp.dll`. `IBatchContext` / `StepOutcome` / `BatchPhase` resolve to `Acd.Mcp.Contracts`; `AcadBatchGlobals` resolves to `Acd.Mcp.Api`.
+- `BatchScriptHost.Compile` accepts a minimal Step DSL body cleanly (`isPass=True`). No more "type or namespace name 'Acd' could not be found" / "name 'ctx' does not exist" errors that defined G6 in v2.
+- BATCH Test run against `crashtest-v2-dwgs/*.dwg` driven via `BatchViewModel.RunCommand` reflection: **5/5 Pass in 373ms.** Per-file step results match the entity counts in `<dwg-generation>` exactly.
+
+**What this unblocks:**
+
+- BATCH flavour is functional for end users for the first time since the plugin shipped.
+- G3 (`bool? replaced_dirty`) is now end-to-end testable on the bridge — needs an MCP-bridge restart to pick up the new record shape.
+- G4 (batch run-test error propagation) still requires the McpException → success-shape conversion separately; G8 doesn't address it.
+
+**Coupling cost:** one extra assembly and one extra ProjectReference per project that touches the types. The cost is bounded — `Acd.Mcp.Contracts` deliberately *can* never grow dependencies, so it doesn't become a god-assembly over time.
+</g8>
+
+<g9 id="g9">
+**G9 [smell, LOW, surfaced during G6 live-verification]** — `BatchScriptRuntime.BuildOptions()` imports BOTH `Autodesk.AutoCAD.DatabaseServices` and `Autodesk.Civil.DatabaseServices`. Both namespaces define a public `Entity` type. Any batch script body that names `Entity` unqualified fails to compile with `CS0104: 'Entity' is an ambiguous reference between 'Autodesk.AutoCAD.DatabaseServices.Entity' and 'Autodesk.Civil.DatabaseServices.Entity'`.
+
+This is the same defect F13 fixed for the REPL (the action was "drop `Autodesk.Civil.*` imports from REPL default set"), but the fix wasn't propagated to the BATCH runtime's `WithImports(...)`. Mirroring the REPL's import set — i.e. drop the `Autodesk.Civil.*` lines from `BatchScriptRuntime.BuildOptions` — closes G9.
+
+Until then, batch script bodies must spell `Autodesk.AutoCAD.DatabaseServices.Entity` in full whenever they need it. The crashtest-v2-noop body in the verification run does exactly that.
+</g9>
+
 </new-findings>
 
 <dwg-generation>
@@ -184,6 +242,7 @@ The architectural fixes from the v1 actions pass were correct in shape (ALC spli
 - **v15 — Default ALC Resolving handler.** Added `AssemblyLoadContext.Default.Resolving += ResolveByteLoadedPluginAssembly` to return the byte-loaded `Acd.Mcp` / `Acd.Mcp.Batch` from the isolated ALC. New error: `non-collectible assembly may not reference a collectible assembly`. The byte-loaded assemblies live in DevReload's collectible ALC; the Roslyn-emitted script assembly is non-collectible. CLR refuses the cross-collectibility reference.
 - **v16 — Type-move attempt.** Moved `AcadBatchGlobals` to `Acd.Mcp.Api` (default ALC). Added `Acd.Mcp.Batch` to `streamedAssemblies` so `IBatchContext` is also in Default ALC. Encountered framework mismatch: `Acd.Mcp.Api` is net8.0-windows, `Acd.Mcp.Batch` is net8.0 cross-platform. Workaround via `Acd.Mcp.Api → Acd.Mcp.Batch` project ref worked. New error: `MissingMethodException: BatchScriptHost\`1..ctor(Microsoft.CodeAnalysis.Scripting.ScriptOptions)`. Because `BatchScriptRuntime` (in Acd.Mcp.dll / isolated ALC) builds `ScriptOptions` from a *different* ALC's `Microsoft.CodeAnalysis.Scripting` than `BatchScriptHost` now expects. Adding `Microsoft.CodeAnalysis.*` to `streamedAssemblies` caused DevReload to fail loading the plugin (no `Initialize` log entry; root cause not diagnosed — probably native-dep handling for the Roslyn libs).
 - **v17 — Revert.** Restored all v15/v16 changes (Resolving handler removed; type moves reverted; shared config back to original). Preserved v13's G2 fix and the G3 source change. Documented the v16 path forward in [[#g8]]. Build is clean at `bin/Debug/Acd.Mcp.dll`.
+- **v18 — Contracts split (G6/G8 fix, VERIFIED).** Introduced `Acd.Mcp.Contracts.csproj` (net8.0, zero deps) holding the script-visible interfaces and enums; both `Acd.Mcp.Batch` and `Acd.Mcp.Api` project-ref it. Moved `AcadBatchGlobals` into `Acd.Mcp.Api/Batch/`. Added `Acd.Mcp.Contracts` to both `sharedAssemblies` and `streamedAssemblies` in `SharedAssemblies.Config.json`. `Acd.Mcp.Batch` stays out of `streamedAssemblies` — its Roslyn dependency would otherwise duplicate across ALCs and break `BatchScriptHost<T>`'s ctor identity (the v16 failure mode). Build clean; 44/44 Acd.Mcp.Batch.Tests pass. Civil 3D 2025 launched with `/Automation` (PID 47256): `Initialize: v18-contracts-split-g6-fixed`, `PropertySetProvider: AECC PropertySets available`, `EnsureDtoGraph: Registered 21 DTO types`. **No `EXCEPTION in TryEnsureCore`** — the `MissingMethodException` chain is gone. `BatchScriptHost.Compile` returns `IsPass=True` for a minimal Step DSL body. BATCH Test run against `crashtest-v2-dwgs/*.dwg` driven via `BatchViewModel.RunCommand` reflection: **5/5 Pass in 373ms**, entity counts match the [[#dwg-generation]] table exactly. Surfaced one new smell during script-body authoring: [[#g9]] (BATCH imports still include `Autodesk.Civil.*` and shadow `Entity`). See [[#g8]] for the full architecture rationale.
 
 **What's verified working post-v17:**
 

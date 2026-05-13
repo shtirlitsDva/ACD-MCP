@@ -26,16 +26,12 @@ namespace Acd.Mcp.Batch.Runtime
             // typeof(AcadBatchGlobals) ensures the globals assembly is
             // referenced even when AppDomain.GetAssemblies() hasn't enumerated it.
             //
-            // KNOWN LIMITATION (G6 in v2 crash-test journal): even with refs
-            // resolved correctly, batch scripts STILL fail at run-time because
-            // the Roslyn-compiled assembly lives in a NON-COLLECTIBLE scripting
-            // ALC, but AcadBatchGlobals and IBatchContext live in COLLECTIBLE
-            // DevReload-managed ALCs (Acd.Mcp.dll, Acd.Mcp.Batch.dll). The CLR
-            // forbids non-collectible → collectible references, so script IL
-            // fails to load with "non-collectible assembly may not reference
-            // collectible assembly". Full fix requires moving AcadBatchGlobals
-            // + IBatchContext + supporting types to the default (non-collectible)
-            // ALC. See journal for the structural-refactor plan.
+            // The collectibility-violation that blocked batch scripts in v1/v2
+            // is fixed structurally: AcadBatchGlobals lives in Acd.Mcp.Api and
+            // IBatchContext / StepOutcome / BatchPhase live in
+            // Acd.Mcp.Contracts. Both assemblies are loaded into the default
+            // (non-collectible) ALC via DevReload's streamedAssemblies list,
+            // so the script's emitted IL never references a collectible type.
             return ScriptOptions.Default
                 .WithReferences(RoslynReferences.Build(typeof(AcadBatchGlobals)))
                 .WithImports(

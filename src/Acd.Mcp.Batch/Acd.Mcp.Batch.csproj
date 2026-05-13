@@ -29,4 +29,18 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Script-visible contracts (IBatchContext, IStepBuilder, StepOutcome,
+         RequirementResult, BatchPhase, BatchMode, BatchOnFailure) live in a
+         zero-dependency project so they can be streamed into the default
+         (non-collectible) ALC. See Acd.Mcp.Contracts.csproj for the full
+         reason; in short, Roslyn-emitted script IL cannot reference types
+         in a collectible ALC, and this project is loaded into one by
+         DevReload. The same types ARE used by Acd.Mcp.Batch (the runner
+         consumes IBatchContext, the StepBuilder implements IStepBuilder,
+         etc.); a collectible -> non-collectible reference is allowed,
+         so the project ref works at runtime. -->
+    <ProjectReference Include="..\Acd.Mcp.Contracts\Acd.Mcp.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>
