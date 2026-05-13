@@ -158,6 +158,47 @@ namespace Acd.Mcp.Batch.Tests
         }
 
         [Fact]
+        public void ProposeFromAgent_OnCleanEditor_InlinePromotes_AndSyncFlushesMirror()
+        {
+            // V3-H3 regression test: on a clean editor (no user edits to
+            // clobber), ProposeFromAgent inline-promotes the proposal so
+            // the mirror file is on disk BEFORE the call returns. No
+            // FlushNow needed by the test, no debounce wait.
+            Assert.False(_editor.IsDirty);
+            Assert.False(File.Exists(_mirrorPath));
+
+            var saved = _editor.ProposeFromAgent("clean-inline", "// auto-promoted", summary: null);
+
+            // CurrentText IS the saved body now (no staging).
+            Assert.Equal(saved.Body, _editor.CurrentText);
+            // No pending proposal — already promoted.
+            Assert.False(_editor.HasPendingProposal);
+            Assert.Null(_editor.PendingProposal);
+            // IsDirty stays false — promotion ≠ user typing.
+            Assert.False(_editor.IsDirty);
+            // Mirror is on disk synchronously — the whole point of H3.
+            Assert.True(File.Exists(_mirrorPath));
+            Assert.Equal(saved.Body, File.ReadAllText(_mirrorPath));
+        }
+
+        [Fact]
+        public void AcceptPending_FlushesMirror_Synchronously()
+        {
+            // V3-H3 regression test: AcceptPending writes the mirror
+            // file synchronously (FlushNow inside) — the test does NOT
+            // call _mirror.FlushNow() and the assertion still holds.
+            _editor.OnUserTyped("// user-typed");
+            var staged = _editor.ProposeFromAgent("accept-sync", "// agent body", null);
+            Assert.True(_editor.HasPendingProposal);
+
+            _editor.AcceptPending();
+            // No FlushNow here on purpose.
+
+            Assert.True(File.Exists(_mirrorPath));
+            Assert.Equal(staged.Body, File.ReadAllText(_mirrorPath));
+        }
+
+        [Fact]
         public void ProposeFromAgent_Twice_ReplacesPending()
         {
             _editor.OnUserTyped("// user");

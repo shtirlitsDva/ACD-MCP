@@ -132,6 +132,24 @@ $rsp = Invoke-AcdMcpPipe -AcadPid $pid -Method 'repl.proposeScript' `
 3. **Document the latency in the skill docs** and tell the agent to sleep N ms before reading the mirror. Brittle; defers the actual fix.
 
 Option 1 is the right call — the propose contract is "writes to disk + mirrors", that should be atomic from the caller's POV.
+
+**FIXED (2026-05-13 ~16:13):** `ScriptEditor.ProposeFromAgent` now branches on `IsDirty`:
+
+- **Clean editor (the common agent-iteration path):** inline-promote. Sets `_currentText = saved.Body`, `_pendingProposal = null`, calls `_mirror.SetText(saved.Body)` + `_mirror.FlushNow()` synchronously while still holding `_lock`. The mirror file is durable on disk before `ProposeFromAgent` returns. The `ScriptProposed` event still fires so UI subscribers can refresh their display; their `AcceptPending` becomes a no-op (pending already cleared) — intentional convergence.
+
+- **Dirty editor:** existing staging model preserved — body parked in `PendingProposal`, event fired, UI prompts the user, `AcceptPending`/`DiscardPending` resolves. The mirror reflects the user's typed body the whole time, so the agent's "read-before-propose" workflow is honest.
+
+`AcceptPending` was also tightened to call `_mirror.FlushNow()` after `_mirror.SetText`, so the dirty-path accept doesn't leak the same race when it lands. The 250 ms debounce is preserved for `OnUserTyped` (where it's actually useful — keystroke flurries).
+
+**VERIFIED end-to-end (PID 49432, build label `v21-batch-tools-success-shape`):**
+
+| Probe | Pre-fix observation | Post-fix observation |
+|---|---|---|
+| `repl.proposeScript` on clean editor, time-to-mirror-on-disk | propose ok at 60 ms; mirror lands at +395 ms (race window ~335 ms) | propose ok at **18 ms**; mirror **already on disk** at return time (51 B, correct content with `// @flavor / @name` header) |
+| `batch.proposeScript` on clean editor | (same race) | propose ok at **14 ms**; mirror already on disk (105 B) |
+| `ProposeFromAgent_StagesPending_DoesNotTouchCurrentText_Mirror_OrDirty` (dirty path) | pass | pass — staging model preserved |
+
+Two new tests pin the H3 invariants: `ProposeFromAgent_OnCleanEditor_InlinePromotes_AndSyncFlushesMirror` and `AcceptPending_FlushesMirror_Synchronously`. Suite is now 57/57 (was 55/55).
 </v3-h3>
 
 <summary>
@@ -142,7 +160,7 @@ Option 1 is the right call — the propose contract is "writes to disk + mirrors
 
 **New gremlins (H1, H2):** both about the iteration loop, not the code surface. Together they say: hot-reloading the bridge dll mid-conversation is currently a paper-cut, not a workflow. The direct-pipe harness sidesteps both for the rest of this loop and is documented in this journal.
 
-**Post-merge gremlin (H3):** the new (and the existing batch) `propose_script` path returns ok ~300 ms before the mirror file is actually on disk. Mostly cosmetic for one-shot use, but breaks the documented "read mirror, plan, propose" loop when an agent iterates. Fix: await the mirror write inside the RPC handler — the propose contract is implicitly atomic and should be explicitly so.
+**Post-merge gremlin (H3):** the new (and the existing batch) `propose_script` path returned ok ~300 ms before the mirror file was actually on disk. **FIXED and verified — clean-editor proposals inline-promote (sync flush); dirty-editor proposals retain the staging-and-prompt model.** Propose-to-mirror-on-disk shrunk from ~395 ms to <20 ms. See `<v3-h3>` for evidence and design.
 
 **State at end of session:**
 - Civil 3D PID 4732 still running (the agent's `/Automation` instance).

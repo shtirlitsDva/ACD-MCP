@@ -12,13 +12,29 @@ namespace Acd.Mcp.Batch
     //   * a separate "pending proposal" slot that holds the agent's
     //     last proposal until the UI accepts or discards it.
     //
-    // <staging-model> An agent proposal does NOT immediately overwrite
-    // CurrentText or the mirror file. ProposeFromAgent writes the script
-    // to disk (the store), parks the body in PendingProposal, and fires
-    // ScriptProposed. The UI then decides — accept (AcceptPending) or
-    // discard (DiscardPending). Until then, CurrentText + the mirror
-    // reflect what the USER is actually editing, so the agent's
-    // "read-the-mirror-before-re-proposing" convention is honest.
+    // <staging-model> An agent proposal's disposition depends on whether
+    // the editor has unsaved user edits at propose time:
+    //
+    //  * Editor is CLEAN (IsDirty=false): no user state to clobber, so
+    //    ProposeFromAgent inline-promotes the proposal — _currentText
+    //    becomes the saved body, the mirror is synchronously written +
+    //    flushed (NOT debounced), and PendingProposal is cleared before
+    //    ScriptProposed is fired. This eliminates the V3-H3 race where
+    //    the agent's next iteration could read stale mirror content.
+    //
+    //  * Editor is DIRTY (IsDirty=true): the user has unsaved typed
+    //    edits. ProposeFromAgent writes the script to disk (the store),
+    //    parks the body in PendingProposal, and fires ScriptProposed.
+    //    The UI then prompts the user — accept (AcceptPending) or
+    //    discard (DiscardPending). Until then, CurrentText + the mirror
+    //    reflect what the USER is actually editing, so the agent's
+    //    "read-the-mirror-before-re-proposing" convention is honest.
+    //
+    // The ScriptProposed event fires in BOTH cases — UI subscribers
+    // need it to refresh their display from the accepted body and to
+    // run the prompt path in the dirty case. UI subscribers' calls to
+    // AcceptPending after the clean-editor inline promote are no-ops
+    // (pending already cleared), which is the intentional convergence.
     // </staging-model>
     //
     // <dirty-semantics> IsDirty means "the user has unsaved typed edits".
@@ -133,11 +149,14 @@ namespace Acd.Mcp.Batch
             }
         }
 
-        // Agent path. Writes the body to the store, stages it as a
-        // pending proposal, fires ScriptProposed. Does NOT touch
-        // CurrentText or the mirror — those stay at what the user is
-        // editing until the UI calls AcceptPending. A new proposal
-        // replaces any earlier pending proposal (agent iterating).
+        // Agent path. Writes the body to the store, then either:
+        //   * inline-promotes (clean editor — no user state to clobber), or
+        //   * stages as a pending proposal for the UI to accept/discard
+        //     (dirty editor — user has unsaved edits).
+        // In both cases ScriptProposed is fired so UI subscribers can
+        // refresh their display. A new proposal replaces any earlier
+        // pending proposal in the dirty case (agent iterating). See
+        // <staging-model> for the rationale.
         public SavedScript ProposeFromAgent(string name, string body, string? summary = null)
         {
             var saved = _store.Save(Flavor, name, body, summary);
@@ -146,7 +165,23 @@ namespace Acd.Mcp.Batch
             {
                 if (_disposed) return saved;
                 evt = new ScriptProposedEvent(saved, _currentText);
-                _pendingProposal = saved;
+                if (_isDirty)
+                {
+                    // Stage for UI to prompt — preserve user edits in
+                    // CurrentText + mirror until AcceptPending.
+                    _pendingProposal = saved;
+                }
+                else
+                {
+                    // Inline promote — close V3-H3. The mirror is sync-
+                    // flushed (FlushNow) so it's durable before the RPC
+                    // call returns, eliminating the ~300 ms race where
+                    // an iterating agent could read stale mirror content.
+                    _currentText = saved.Body;
+                    _pendingProposal = null;
+                    _mirror.SetText(saved.Body);
+                    _mirror.FlushNow();
+                }
             }
             ScriptProposed?.Invoke(this, evt);
             return saved;
@@ -155,8 +190,12 @@ namespace Acd.Mcp.Batch
         // UI accepted the pending proposal. Promote pending → current,
         // clear dirty, write the mirror, drop the pending slot. No-op
         // if there's no pending proposal (the call is harmless and
-        // simplifies the VM's accept path). Mirror write is inside
-        // _lock — see <linearization> on OnUserTyped.
+        // simplifies the VM's accept path — and is exactly the case
+        // ProposeFromAgent's clean-editor inline-promote leaves behind).
+        // Mirror is sync-flushed via FlushNow so the agent's
+        // "read-mirror-before-propose" workflow doesn't race the
+        // debounced write — see V3-H3 in the v3 crash-test journal.
+        // Mirror write is inside _lock — see <linearization> on OnUserTyped.
         public void AcceptPending()
         {
             lock (_lock)
@@ -167,6 +206,7 @@ namespace Acd.Mcp.Batch
                 _isDirty = false;
                 _pendingProposal = null;
                 _mirror.SetText(_currentText);
+                _mirror.FlushNow();
             }
         }
 
