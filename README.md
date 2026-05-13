@@ -45,15 +45,51 @@ Build outputs:
 * `src/Acd.Mcp/bin/Debug/Acd.Mcp.dll` — load this into AutoCAD.
 * `src/Acd.Mcp.Bridge/bin/Debug/Acd.Mcp.Bridge.exe` — register this with your MCP client.
 
-## Run — development (with DevReload)
+## How the plugin loads (non-standard)
 
-Recommended inner loop. Requires [DevReload](https://github.com/shtirlitsDva/DevReload) installed in AutoCAD.
+> **Heads-up for AutoCAD plugin developers reading this code.** ACD-MCP does **not** use AutoCAD's stock `ExtensionLoader` + `[CommandClass]` auto-scan path. Two loader choices are supported, both using the same collectible-ALC + removable-commands pattern. If you've never seen this pattern before, the sections below explain why it exists.
 
-1. In AutoCAD, run `DEVRELOAD` to open the management palette.
-2. Add a plugin pointing at `src/Acd.Mcp/Acd.Mcp.csproj`. Pick a command prefix, e.g. `MCP`.
-3. Run `MCPLOAD` (or your-prefix + `LOAD`).
-4. Run `ACDMCP_START` to start the pipe listener.
-5. Iterate on Acd.Mcp; `MCPDEV` rebuilds and hot-reloads. The pipe restarts; the bridge reconnects automatically on its next call.
+### Why a custom loader
+
+The plugin needs two things that the stock loader cannot give:
+
+1. **A collectible `AssemblyLoadContext`** so a fresh build of `Acd.Mcp.dll` can replace the running copy without restarting AutoCAD (hot reload). AutoCAD's stock loader pins the assembly in the default ALC for the lifetime of the process.
+2. **Removable commands.** `Utils.AddCommand` registers a `[CommandMethod]` in a way that can be un-registered when the ALC unloads. `CommandClass.AddCommand` (what AutoCAD's auto-scan uses) is permanent — reloading the assembly a second time yields `eDuplicateKey`.
+
+Both supported loaders solve these the same way: byte-load the dll into a collectible ALC, reflect `[CommandMethod]` attributes, and register each through `Utils.AddCommand`. ACD-MCP itself stays loader-agnostic.
+
+### The `NoAutoCommands` trick (DEBUG only)
+
+Under DevReload, the plugin is byte-loaded into a collectible ALC and DevReload's `CommandRegistrar` is responsible for registering commands. We do NOT want AutoCAD's `ExtensionLoader` to also auto-scan the plugin's `[CommandClass]` attributes — that would call the permanent `CommandClass.AddCommand` path and survive the next hot-reload, producing duplicate-key errors.
+
+The defense lives at the top of [`src/Acd.Mcp/McpPlugin.cs`](src/Acd.Mcp/McpPlugin.cs):
+
+```csharp
+#if DEBUG
+[assembly: CommandClass(typeof(Acd.Mcp.NoAutoCommands))]
+#endif
+
+#if DEBUG
+public class NoAutoCommands { }
+#endif
+```
+
+An assembly-level `[CommandClass]` pointing at an empty type tells `ExtensionLoader`: "I've declared my command classes; don't auto-scan the rest of the assembly." The loader then trusts the explicit list (an empty class with zero `[CommandMethod]`s) and doesn't touch the real commands on `McpPlugin`. DevReload's `CommandRegistrar` registers those instead — and the registration can be undone on unload, which is the whole point.
+
+Release builds drop the trick (`#if DEBUG`) because NSLOAD takes the same responsibility through a different mechanism (it byte-loads into its own collectible ALC and reflects the attributes itself, regardless of what `[CommandClass]` declarations the assembly carries).
+
+### Supported loaders
+
+| Loader | Use case | Repository |
+|---|---|---|
+| **DevReload** | Developer hot-reload loop. `<prefix>LOAD` / `<prefix>UNLOAD` / `<prefix>DEV` commands; iterate on the source and reload without restarting AutoCAD. | <https://github.com/shtirlitsDva/DevReload> |
+| **NSLOAD** | End-user release loader. Same collectible-ALC + removable-commands pattern, but driven by a CSV catalogue and a managed loader palette instead of dev iteration. | <https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD> |
+
+Pick the one that matches your role:
+
+* **Developing ACD-MCP itself?** Install DevReload, point it at `src/Acd.Mcp/Acd.Mcp.csproj`, pick a command prefix (e.g. `ACDMCP`), and use `ACDMCPLOAD` / `ACDMCPUNLOAD` / `ACDMCPDEV` for the inner loop. See DevReload's README for full instructions. Then run `ACDMCP_START` to open the pipe.
+* **Shipping ACD-MCP to end users alongside other in-house plugins?** Register it in NSLOAD's CSV catalogue and let users load it via the NSLOAD palette. This is the path Damgaard's other AutoCAD/Civil 3D tools follow.
+* **Just installing ACD-MCP as a standalone end-user?** Use the AutoCAD bundle install path below — `ACD-MCP.bundle` autoloads via AutoCAD's standard mechanism. Release builds work under that path because `NoAutoCommands` is DEBUG-only.
 
 ## Install
 
@@ -180,7 +216,9 @@ So `git tag v0.2.0 && git push --tags` is sufficient to cut a release — no man
 
 ### Palette / WPF note
 
-The palette uses WPF. Under DevReload, add these to the plugin's shared-assemblies list so XAML types resolve consistently across the collectible ALC boundary: `PresentationFramework`, `PresentationCore`, `WindowsBase`, `System.Xaml`. (AvalonEdit and CommunityToolkit.Mvvm are loaded only by the plugin and stay in its ALC — no sharing needed.)
+The palette uses WPF. Under a custom loader (DevReload or NSLOAD), add these to the plugin's shared-assemblies list so XAML types resolve consistently across the collectible ALC boundary: `PresentationFramework`, `PresentationCore`, `WindowsBase`, `System.Xaml`. (AvalonEdit and CommunityToolkit.Mvvm are loaded only by the plugin and stay in its ALC — no sharing needed.)
+
+The plugin's `SharedAssemblies.Config.json` template ships these defaults plus the AutoCAD-managed types and the V18 contracts split (`Acd.Mcp.Api`, `Acd.Mcp.Contracts`). MSBuild copies the template to `bin/Debug/` per build, so a fresh clone + `dotnet build` is self-sufficient.
 
 ### Diagnostic log
 
