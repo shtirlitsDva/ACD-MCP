@@ -1,3 +1,4 @@
+using Acd.Mcp.Batch;
 using Acd.Mcp.Batch.Runtime;
 using Acd.Mcp.Batch.Ui;
 using Acd.Mcp.Pipe;
@@ -23,7 +24,12 @@ namespace Acd.Mcp.Ui
         private readonly ReplControl _replControl;
         private readonly BatchControl _batchControl;
 
-        public ReplPaletteSet(AcadExecutor executor, ScriptSession session, ExecutionLog log, BatchExecutor batchExecutor)
+        public ReplPaletteSet(
+            AcadExecutor executor,
+            ScriptSession session,
+            ExecutionLog log,
+            BatchExecutor batchExecutor,
+            ScriptEditor replScriptEditor)
             : base("ACD-MCP", "ACDMCP_PALETTE", PaletteGuid)
         {
             Style = PaletteSetStyles.ShowAutoHideButton
@@ -32,7 +38,7 @@ namespace Acd.Mcp.Ui
                   | PaletteSetStyles.Snappable;
             MinimumSize = new System.Drawing.Size(420, 320);
 
-            _replControl = new ReplControl(executor, session, log);
+            _replControl = new ReplControl(executor, session, log, replScriptEditor);
             _batchControl = new BatchControl(batchExecutor);
             AddVisual("REPL", _replControl);
             AddVisual("BATCH", _batchControl);

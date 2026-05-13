@@ -41,7 +41,7 @@ namespace Acd.Mcp.Bridge.Tools
             "update against it (so you don't trample user edits). If the editor has dirty changes, the " +
             "user is prompted to confirm before your version replaces theirs. Same name overwrites the " +
             "existing saved script. See the acd-batch skill for the full workflow and script-body contract.")]
-        public async Task<BatchProposeResult> ProposeAsync(
+        public async Task<ProposeScriptResult> ProposeAsync(
             [Description("Telegram-style name (lowercase, hyphenated, no filler). Used as both the saved filename and the run label.")]
             string name,
             [Description("The script BODY only — no `new Database(...)`, no transactions, no try/catch, no SaveAs. The runtime owns those. Use the Step DSL: ctx.Step(\"name\").Require(\"label\", () => predicate).Apply(() => { ...mutation...; return \"summary\"; });. Globals: xDb (Database), xTx (Transaction), ctx (IBatchContext).")]
@@ -52,7 +52,7 @@ namespace Acd.Mcp.Bridge.Tools
         {
             try
             {
-                return await _client.CallAsync<BatchProposeResult>("batch.proposeScript",
+                return await _client.CallAsync<ProposeScriptResult>("batch.proposeScript",
                     new { name, script_body, input_summary }, ct).ConfigureAwait(false);
             }
             catch (AcadRpcException ex)
@@ -66,17 +66,4 @@ namespace Acd.Mcp.Bridge.Tools
             }
         }
     }
-
-    // `replaced_dirty` is the agent's signal that the editor had unsaved
-    // changes AND those changes differed from the proposed body at the moment
-    // of the call — so the user is being prompted (in the WPF dispatcher,
-    // asynchronously to the RPC return). The agent should warn the user that
-    // their in-flight edits are about to be replaced. The user's actual Yes/No
-    // is NOT reported here — it can't be: the dialog is async to the RPC.
-    //
-    // Nullable so System.Text.Json's WhenWritingDefault on the MCP server's
-    // side doesn't silently drop the `false` case. See G3 in the v2 crash-test
-    // journal — before this change, the agent only ever saw three fields
-    // (ok / saved_as / name) and could never observe the dirty state.
-    public sealed record BatchProposeResult(bool ok, string saved_as, string name, bool? replaced_dirty);
 }

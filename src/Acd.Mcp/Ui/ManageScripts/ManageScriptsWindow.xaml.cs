@@ -1,51 +1,60 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using Acd.Mcp.Batch;
-using Acd.Mcp.Batch.Runtime;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
-namespace Acd.Mcp.Batch.Ui
+namespace Acd.Mcp.Ui.ManageScripts
 {
+    // Flavor-agnostic Manage Scripts window. Driven by:
+    //   * ScriptEditor — provides the saved-scripts store and the flavor.
+    //   * IManageScriptsTarget — the host VM the window calls back into
+    //                            for "give me your current editor text"
+    //                            and "please load this saved script".
+    //
+    // Both BATCH and REPL palettes open this same window with their own
+    // ScriptEditor + VM pair. The window title shows which flavor is
+    // being managed.
     public partial class ManageScriptsWindow : Window
     {
         private readonly ManageScriptsViewModel _vm;
 
-        public ManageScriptsWindow(BatchExecutor executor, BatchViewModel paletteVm)
+        internal ManageScriptsWindow(ScriptEditor editor, IManageScriptsTarget target)
         {
             InitializeComponent();
-            _vm = new ManageScriptsViewModel(executor, paletteVm, this);
+            _vm = new ManageScriptsViewModel(editor, target, this);
             DataContext = _vm;
         }
     }
 
-    // Lives next to the window because it's tightly coupled to it: Load
-    // dismisses the window, Save-as / Rename pop input dialogs, etc.
     internal sealed partial class ManageScriptsViewModel : ObservableObject
     {
-        private readonly BatchExecutor _executor;
-        private readonly BatchViewModel _paletteVm;
+        private readonly ScriptEditor _editor;
+        private readonly IManageScriptsTarget _target;
         private readonly Window _window;
 
         public ObservableCollection<SavedScript> Items { get; } = new();
+        public string WindowTitle { get; }
 
         [ObservableProperty] private SavedScript? _selected;
 
-        public ManageScriptsViewModel(BatchExecutor executor, BatchViewModel paletteVm, Window window)
+        public ManageScriptsViewModel(ScriptEditor editor, IManageScriptsTarget target, Window window)
         {
-            _executor = executor;
-            _paletteVm = paletteVm;
+            _editor = editor;
+            _target = target;
             _window = window;
+            WindowTitle = $"Manage Scripts — {(editor.Flavor == ScriptFlavor.Batch ? "Batch" : "REPL")}";
+
             Refresh();
-            // If the editor's current script matches a saved entry, preselect it.
+            // If the editor's current text matches a saved entry, preselect it.
             foreach (var s in Items)
-                if (s.Body == executor.CurrentScript) { Selected = s; break; }
+                if (s.Body == _editor.CurrentText) { Selected = s; break; }
         }
 
         private void Refresh()
         {
             Items.Clear();
-            foreach (var s in _executor.Scripts.List(ScriptFlavor.Batch, limit: 200, offset: 0))
+            foreach (var s in _editor.Store.List(_editor.Flavor, limit: 200, offset: 0))
                 Items.Add(s);
         }
 
@@ -53,7 +62,10 @@ namespace Acd.Mcp.Batch.Ui
         private void Load() => SafeBoundary.Run("ManageScripts.Load", () =>
         {
             if (Selected is null) return;
-            _paletteVm.LoadSavedScript(Selected);
+            // Keep the window open if the VM refused the load (e.g. the
+            // user clicked No on the unsaved-changes prompt) — they may
+            // want to pick a different script.
+            if (!_target.LoadSavedScript(Selected)) return;
             _window.DialogResult = true;
             _window.Close();
         });
@@ -63,7 +75,7 @@ namespace Acd.Mcp.Batch.Ui
         {
             var name = Prompts.AskForString(_window, "Save as new", "Telegram-style name (e.g. set-layer-transparency):");
             if (string.IsNullOrWhiteSpace(name)) return;
-            _executor.Scripts.Save(ScriptFlavor.Batch, name, _executor.CurrentScript);
+            _editor.Store.Save(_editor.Flavor, name, _target.CurrentScriptText);
             Refresh();
         });
 
@@ -73,7 +85,7 @@ namespace Acd.Mcp.Batch.Ui
             if (Selected is null) return;
             var name = Prompts.AskForString(_window, "Rename", $"New name for '{Selected.Name}':");
             if (string.IsNullOrWhiteSpace(name)) return;
-            try { _executor.Scripts.Rename(ScriptFlavor.Batch, Selected.Name, name); }
+            try { _editor.Store.Rename(_editor.Flavor, Selected.Name, name); }
             catch (System.IO.IOException ex)
             {
                 MessageBox.Show(_window, ex.Message, "Rename failed", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -92,7 +104,7 @@ namespace Acd.Mcp.Batch.Ui
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (ok != MessageBoxResult.Yes) return;
-            _executor.Scripts.Delete(ScriptFlavor.Batch, Selected.Name);
+            _editor.Store.Delete(_editor.Flavor, Selected.Name);
             Refresh();
         });
 
@@ -105,7 +117,8 @@ namespace Acd.Mcp.Batch.Ui
     }
 
     // Tiny inline prompt helper. WPF doesn't ship Microsoft.VisualBasic's
-    // InputBox; we wire up a one-off Window with a TextBox.
+    // InputBox; we wire up a one-off Window with a TextBox. Used by
+    // SaveAs and Rename for both flavors.
     internal static class Prompts
     {
         public static string? AskForString(Window owner, string title, string prompt)

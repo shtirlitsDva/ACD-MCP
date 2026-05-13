@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Acd.Mcp.Batch;
 using Acd.Mcp.Batch.Runtime;
+using Acd.Mcp.Ui.ManageScripts;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -31,7 +32,7 @@ namespace Acd.Mcp.Batch.Ui
     //
     // Implements IBatchUiState so the pipe RPC handler can read the
     // current selection without coupling to WPF.
-    public sealed partial class BatchViewModel : ObservableObject, IDisposable, IBatchUiState
+    public sealed partial class BatchViewModel : ObservableObject, IDisposable, IBatchUiState, IManageScriptsTarget
     {
         private readonly BatchExecutor _executor;
         private readonly Dispatcher _dispatcher;
@@ -91,6 +92,12 @@ namespace Acd.Mcp.Batch.Ui
         bool IBatchUiState.Recurse => Recurse;
         IReadOnlyList<string> IBatchUiState.CurrentSelection => Files.ToArray();
         BatchOnFailure IBatchUiState.OnFailure => OnFailure;
+
+        // IManageScriptsTarget — the shared Manage Scripts window reads
+        // CurrentScriptText for Save-As and calls LoadSavedScript when
+        // the user clicks Load.
+        string IManageScriptsTarget.CurrentScriptText => CurrentScript;
+        bool IManageScriptsTarget.LoadSavedScript(SavedScript saved) => LoadSavedScript(saved);
 
         public BatchViewModel(BatchExecutor executor)
         {
@@ -176,15 +183,20 @@ namespace Acd.Mcp.Batch.Ui
         [RelayCommand]
         private void ManageScripts() => SafeBoundary.Run("BatchVm.ManageScripts", () =>
         {
-            var win = new ManageScriptsWindow(_executor, this);
+            var win = new ManageScriptsWindow(_executor.ScriptEditor, this);
             // Modal — see <open-decisions> #4. Closes on Load / Cancel.
             win.Owner = Application.Current?.MainWindow;
             win.ShowDialog();
         });
 
         // Called when the user picks "Load" in the Manage Scripts window.
-        // Behaves the same as an agent proposal, with the dirty-prompt path.
-        public void LoadSavedScript(SavedScript saved) =>
+        // Behaves the same as an agent proposal, with the dirty-prompt
+        // path. Returns true if the load was applied; false if the user
+        // refused at the unsaved-changes prompt (so the window can stay
+        // open for another pick).
+        public bool LoadSavedScript(SavedScript saved)
+        {
+            bool applied = false;
             SafeBoundary.Run("BatchVm.LoadSavedScript", () =>
             {
                 if (IsDirty && CurrentScript != saved.Body)
@@ -202,7 +214,10 @@ namespace Acd.Mcp.Batch.Ui
                 _executor.ScriptEditor.LoadFromSaved(saved);
                 SetVmTextFromLoad(saved.Body);
                 IsDirty = false;
+                applied = true;
             });
+            return applied;
+        }
 
         private void OnScriptProposed(object? sender, ScriptProposedEvent evt)
             => Marshal(() =>

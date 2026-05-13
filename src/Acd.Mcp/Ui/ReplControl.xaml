@@ -89,6 +89,9 @@
                         Margin="0,0,6,0"/>
                 <Button Content="Clear log"
                         Command="{Binding ClearLogCommand}"
+                        Margin="0,0,6,0"/>
+                <Button Content="Scripts…"
+                        Command="{Binding ScriptsCommand}"
                         Margin="0,0,12,0"/>
                 <TextBlock Text="{Binding StatusLine}"
                            Style="{StaticResource Text.Secondary}"
