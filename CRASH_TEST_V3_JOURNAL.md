@@ -90,6 +90,50 @@ Option 3 is the right minimum. Option 1 is the structural fix.
 
 </new-findings>
 
+<post-merge-script-editor-verification>
+
+After the `worktree-script-editor-refactor` branch was merged to master (commit `3fdd9b2`, 2026-05-13 ~14:30), Civil 3D was relaunched with the merged build (PID 45220, plugin label `v21-batch-tools-success-shape` confirmed in `Initialize` log line). The new BATCH + REPL script-editor surface was exercised end-to-end through the same direct-pipe harness, since the killed in-session MCP bridge from earlier in the day was never respawned (see [[#v3-h1]]).
+
+| Probe | Result | Notes |
+|---|---|---|
+| `_batchScriptEditor`, `_replScriptEditor` | both `Acd.Mcp.Batch.ScriptEditor` instances | shared abstraction holds — same type, separate state |
+| `_batchRpc`, `_replRpc` | `BatchRpcHandler`, `ReplRpcHandler` | both wired by `ShowPalette` |
+| `batch.proposeScript` | returns `{ ok, saved_as, name, replaced_dirty }` | shape unchanged from V2 — backward compatible |
+| `repl.proposeScript` (new) | returns the same `{ ok, saved_as, name, replaced_dirty }` shape | DRY'd onto the shared `ProposeScriptResult` record (extended with G4 error fields during merge) |
+| Saved-script store routes by flavor | `%APPDATA%\Acd.Mcp\scripts\batch\*.csx` + `…\scripts\repl\*.csx` | `SavedScriptStore` writes the right subfolder per flavor |
+| Mirror files | `editor-buffer.csx` (BATCH, legacy path) + `repl-buffer.csx` (REPL, new) | both written; content matches the proposed body verbatim including the `// @flavor / @name / @summary` header |
+
+Plus the new `autocad_repl_propose_script` MCP tool now ships with the same G4 success-shape error propagation as the BATCH proposer (catches `AcadRpcException`, returns `ok: false` with `error_code` + `error_message`). That extension landed during the merge conflict resolution since the worktree had authored the new tool against the original throwing pattern.
+
+</post-merge-script-editor-verification>
+
+<v3-h3 id="v3-h3">
+**H3 [BUG, MEDIUM, post-merge]** — `propose_script` (both batch and repl) returns `ok: true` BEFORE the mirror file (`%LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx` / `repl-buffer.csx`) is flushed to disk. Measured race: pipe call returned in **60 ms**; mirror file appeared on disk at **+395 ms** (so ~335 ms of "ok but not yet on disk").
+
+**Reproducer:**
+```powershell
+$p = "$env:LOCALAPPDATA\Acd.Mcp\repl-buffer.csx"
+Remove-Item $p -Force -ErrorAction SilentlyContinue
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+$rsp = Invoke-AcdMcpPipe -AcadPid $pid -Method 'repl.proposeScript' `
+    -Params @{ name='race'; script_body='return 1+1;' }
+"Propose ok in $($sw.ElapsedMilliseconds)ms; mirror exists = $(Test-Path $p)"
+# Observed: ok in 60 ms; mirror exists = False for the next ~300 ms.
+```
+
+**Why it matters:** the documented workflow (in `skills/repl/SKILL.md` and `skills/start/SKILL.md`) instructs the agent to READ `editor-buffer.csx` / `repl-buffer.csx` BEFORE calling `propose_script` so it can plan its update against the user's in-flight edits. If the agent iterates — propose, then read-back to verify, or propose-again with a follow-up — it can race the previous iteration's flush and read STALE content. Worse: on the first-ever propose for a flavor, the mirror doesn't exist until the flush completes; an agent that pre-checks existence as a precondition will see "no mirror" and may pick a wrong code path.
+
+**Root cause (probable):** the mirror flush is dispatched off-thread (likely via the WPF dispatcher) — `EditorBuffer` writes when `ScriptEditor._currentText` changes, but the write isn't awaited by the RPC handler. The propose RPC returns as soon as the `_currentText` is set, not when the mirror flush completes.
+
+**Fix options:**
+
+1. **Await the mirror write inside the RPC handler.** Cleanest — the agent's mental model ("propose returned, so the mirror is up to date") matches the wire reality. Cost: ~few ms added to propose latency.
+2. **Add a `mirror_synced: bool` field to `ProposeScriptResult`** that's set to `false` when the flush is enqueued vs `true` when awaited inline. Lets the agent poll if it cares. Pollution of the shape; the agent has to remember to check.
+3. **Document the latency in the skill docs** and tell the agent to sleep N ms before reading the mirror. Brittle; defers the actual fix.
+
+Option 1 is the right call — the propose contract is "writes to disk + mirrors", that should be atomic from the caller's POV.
+</v3-h3>
+
 <summary>
 
 **V2 closure:** all 9 V2 gremlins are FIXED at source. G2/G3/G9 are end-to-end verified through Civil 3D PID 4732. G4 is verified at source + diagnose; the live agent-side observation pin needs the user to run `/reload-plugins` once they're back at the keyboard.
@@ -97,6 +141,8 @@ Option 3 is the right minimum. Option 1 is the structural fix.
 **V3 regression sweep:** 7 probes across the V1 + V2 surfaces, 0 regressions.
 
 **New gremlins (H1, H2):** both about the iteration loop, not the code surface. Together they say: hot-reloading the bridge dll mid-conversation is currently a paper-cut, not a workflow. The direct-pipe harness sidesteps both for the rest of this loop and is documented in this journal.
+
+**Post-merge gremlin (H3):** the new (and the existing batch) `propose_script` path returns ok ~300 ms before the mirror file is actually on disk. Mostly cosmetic for one-shot use, but breaks the documented "read mirror, plan, propose" loop when an agent iterates. Fix: await the mirror write inside the RPC handler — the propose contract is implicitly atomic and should be explicitly so.
 
 **State at end of session:**
 - Civil 3D PID 4732 still running (the agent's `/Automation` instance).
