@@ -43,7 +43,7 @@ namespace Acd.Mcp.Ui.ManageScripts
             _editor = editor;
             _target = target;
             _window = window;
-            WindowTitle = $"Manage Scripts — {(editor.Flavor == ScriptFlavor.Batch ? "Batch" : "REPL")}";
+            WindowTitle = $"Manage Scripts — {(editor.Flavor == ScriptFlavor.Batch ? "Batch" : "Script")}";
 
             Refresh();
             // If the editor's current text matches a saved entry, preselect it.

@@ -4,29 +4,31 @@ using ModelContextProtocol.Server;
 namespace Acd.Mcp.Bridge.Tools
 {
     [McpServerToolType]
-    public sealed class ExecuteCsharpTool
+    public sealed class ScriptExecuteTool
     {
         private readonly AcadClient _client;
 
-        public ExecuteCsharpTool(AcadClient client)
+        public ScriptExecuteTool(AcadClient client)
         {
             _client = client;
         }
 
         [McpServerTool(
-            Name = "autocad_execute_csharp",
+            Name = "autocad_script_execute",
             ReadOnly = false,        // snippet can modify the drawing
             Destructive = true,      // can erase / overwrite entities
             Idempotent = false,      // session state persists; same call twice ≠ same effect
             OpenWorld = true),       // can touch the file system, network, anything in-process
          Description(
-            "Execute arbitrary C# code inside the running AutoCAD process. The snippet runs on AutoCAD's " +
-            "main thread under a document lock. Variables declared at top level persist across calls — " +
-            "it's a session, not a one-shot. Globals available: Doc (active Document), Db (its Database), " +
-            "Ed (its Editor). The full Autodesk.AutoCAD.* namespaces are imported. Returns an object " +
-            "with success, returnValueRepr, diagnostics (compile errors with line/col), stderr (runtime " +
-            "exceptions), and elapsedMs.")]
-        public async Task<ExecuteResult> ExecuteCsharpAsync(
+            "Execute arbitrary C# code inside the running AutoCAD process against the active drawing. " +
+            "The snippet runs on AutoCAD's main thread under a document lock. Variables declared at top " +
+            "level persist across calls — it's a session, not a one-shot. Globals available: Doc (active " +
+            "Document), Db (its Database), Ed (its Editor), CivilDoc (CivilDocument or null), Acd " +
+            "(metadata façade). The full Autodesk.AutoCAD.* namespaces are imported (Civil 3D imports " +
+            "must be added per-submission). Returns an object with success, return_value_repr, " +
+            "return_value_json, diagnostics (compile errors with line/col), stdout/stderr (captured), " +
+            "and elapsed_ms.")]
+        public async Task<ExecuteResult> ExecuteAsync(
             [Description("C# code to execute. Multi-line allowed; may declare vars/methods; may end with an expression whose value is returned.")]
             string code,
             [Description("Optional cooperative timeout in milliseconds. A snippet that spins without observing its CancellationToken cannot be interrupted.")]

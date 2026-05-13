@@ -22,18 +22,18 @@ namespace Acd.Mcp.Ui
     //     so they ship as a separate resource.
     //
     //  Everything else is in Theme.xaml — no inline colours here.
-    public partial class ReplControl : UserControl, IDisposable
+    public partial class ScriptControl : UserControl, IDisposable
     {
         private const string DarkSyntaxResourceName = "Acd.Mcp.Ui.Themes.CSharp-Dark.xshd";
 
-        private readonly ReplViewModel _vm;
+        private readonly ScriptViewModel _vm;
         private bool _suppressSync;
 
-        public ReplControl(AcadExecutor executor, ScriptSession session, ExecutionLog log, ScriptEditor scriptEditor)
+        public ScriptControl(AcadExecutor executor, ScriptSession session, ExecutionLog log, ScriptEditor scriptEditor)
         {
             InitializeComponent();
 
-            _vm = new ReplViewModel(executor, session, log, scriptEditor);
+            _vm = new ScriptViewModel(executor, session, log, scriptEditor);
             DataContext = _vm;
 
             ApplyDarkSyntax();
@@ -53,9 +53,9 @@ namespace Acd.Mcp.Ui
         // Load CSharp-Dark.xshd from this assembly's embedded resources and
         // assign it to the editor. Swallows on failure so the palette still
         // opens with default colours rather than crashing.
-        private void ApplyDarkSyntax() => SafeBoundary.Run("ReplControl.ApplyDarkSyntax", () =>
+        private void ApplyDarkSyntax() => SafeBoundary.Run("ScriptControl.ApplyDarkSyntax", () =>
         {
-            var asm = typeof(ReplControl).Assembly;
+            var asm = typeof(ScriptControl).Assembly;
             using var stream = asm.GetManifestResourceStream(DarkSyntaxResourceName);
             if (stream is null)
             {
@@ -70,16 +70,16 @@ namespace Acd.Mcp.Ui
         });
 
         private void OnEditorTextChanged(object? sender, EventArgs e) =>
-            SafeBoundary.Run("ReplControl.Editor.TextChanged", () =>
+            SafeBoundary.Run("ScriptControl.Editor.TextChanged", () =>
             {
                 if (_suppressSync) return;
                 _vm.CurrentCode = Editor.Text;
             });
 
         private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) =>
-            SafeBoundary.Run("ReplControl.VmPropertyChanged", () =>
+            SafeBoundary.Run("ScriptControl.VmPropertyChanged", () =>
             {
-                if (e.PropertyName != nameof(ReplViewModel.CurrentCode)) return;
+                if (e.PropertyName != nameof(ScriptViewModel.CurrentCode)) return;
                 if (Editor.Text == _vm.CurrentCode) return;
                 _suppressSync = true;
                 try { Editor.Text = _vm.CurrentCode; }
@@ -87,7 +87,7 @@ namespace Acd.Mcp.Ui
             });
 
         public void Dispose() =>
-            SafeBoundary.Run("ReplControl.Dispose", () =>
+            SafeBoundary.Run("ScriptControl.Dispose", () =>
             {
                 Editor.TextChanged -= OnEditorTextChanged;
                 _vm.PropertyChanged -= OnVmPropertyChanged;

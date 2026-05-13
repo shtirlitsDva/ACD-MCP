@@ -5,7 +5,7 @@ using Acd.Mcp.Batch;
 using Acd.Mcp.Batch.Runtime;
 using Acd.Mcp.Data;
 using Acd.Mcp.Pipe;
-using Acd.Mcp.Repl;
+using Acd.Mcp.Script;
 using Acd.Mcp.Scripting;
 using Acd.Mcp.Serialization;
 using Acd.Mcp.Ui;
@@ -35,7 +35,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v21-batch-tools-success-shape";
+        private const string Version = "v22-script-rename";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -43,31 +43,32 @@ namespace Acd.Mcp
         private static AcadExecutor? _executor;
         private static ExecutionLog? _log;
         private static PipeListener? _listener;
-        private static ReplPaletteSet? _palette;
+        private static ScriptPaletteSet? _palette;
         private static SynchronizationContext? _mainSync;
         private static BatchExecutor? _batchExecutor;
         private static BatchRpcHandler? _batchRpc;
 
         // Shared script-store + per-flavor ScriptEditor instances.
         // SavedScriptStore is filesystem-backed and stateless — a single
-        // instance routes Batch / Repl reads to the correct subfolder
+        // instance routes Batch / Script reads to the correct subfolder
         // via the flavor parameter. Each ScriptEditor owns its
         // EditorBuffer (mirror file) lifetime; no separate field is
         // needed at the plugin level. Both editors are created at
-        // TryEnsureCore so the REPL palette and the repl.* RPC handler
+        // TryEnsureCore so the palette and the script.* RPC handler
         // can see the same instance regardless of which is set up first.
         private static SavedScriptStore? _scriptStore;
-        private static ScriptEditor? _batchScriptEditor;
-        private static ScriptEditor? _replScriptEditor;
-        private static ReplRpcHandler? _replRpc;
+        private static ScriptEditor? _batchEditor;
+        private static ScriptEditor? _scriptEditor;
+        private static ScriptRpcHandler? _scriptRpc;
 
-        // Path of the REPL editor's mirror file. The BATCH editor keeps
-        // the legacy %LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx path
-        // (preserves published skills/docs); REPL gets a sibling file.
-        private static string ReplMirrorPath => System.IO.Path.Combine(
+        // Path of the SCRIPT editor's mirror file. BATCH editor uses
+        // buffer-batch.csx (its EditorBuffer.DefaultPath) in the same
+        // folder; the buffer-<flavor> naming keeps the two mirror files
+        // sorted adjacently in Explorer.
+        private static string ScriptMirrorPath => System.IO.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Acd.Mcp",
-            "repl-buffer.csx");
+            "buffer-script.csx");
 
         // DTO graph. Built once in TryEnsureCore; the same registry feeds both
         // the JsonSerializerOptions (passed to ScriptSession) and the loader
@@ -107,6 +108,12 @@ namespace Acd.Mcp
 
                 SafeBoundary.Info("Initialize", $"{Version} (PID {Process.GetCurrentProcess().Id}, log: {SafeBoundary.LogFile})");
                 EditorMessage($"[ACD-MCP] Initialize() {Version} @ {DateTime.Now:HH:mm:ss}");
+
+                // Migrate pre-rename paths in place so users with saved
+                // REPL scripts keep them. Idempotent: skips when targets
+                // exist or sources don't. See MigrateLegacyPaths body.
+                SafeBoundary.Run("McpPlugin.Initialize/migrate-legacy-paths",
+                    MigrateLegacyPaths);
 
                 // Force-load the AECC PropertyData assembly so PropertySetProvider's
                 // type probe (run when EnsureDtoGraph builds the composite) can find
@@ -198,12 +205,12 @@ namespace Acd.Mcp
             // debounce timer. SavedScriptStore is stateless; nothing
             // to dispose.
             SafeBoundary.Run("McpPlugin.Terminate/batchScriptEditor.Dispose",
-                () => _batchScriptEditor?.Dispose());
-            SafeBoundary.Run("McpPlugin.Terminate/replScriptEditor.Dispose",
-                () => _replScriptEditor?.Dispose());
-            _batchScriptEditor = null;
-            _replScriptEditor = null;
-            _replRpc = null;
+                () => _batchEditor?.Dispose());
+            SafeBoundary.Run("McpPlugin.Terminate/scriptScriptEditor.Dispose",
+                () => _scriptEditor?.Dispose());
+            _batchEditor = null;
+            _scriptEditor = null;
+            _scriptRpc = null;
             _scriptStore = null;
 
             _executor = null;
@@ -293,35 +300,35 @@ namespace Acd.Mcp
                 return;
             }
 
-            _palette ??= new ReplPaletteSet(_executor!, _session!, _log!, _batchExecutor!, _replScriptEditor!);
+            _palette ??= new ScriptPaletteSet(_executor!, _session!, _log!, _batchExecutor!, _scriptEditor!);
             // The BATCH tab's view-model implements IBatchUiState; once the
             // palette exists, route the batch RPC handler at it so the agent
             // can query the user's current folder + mask + file selection.
             _batchRpc = new BatchRpcHandler(_batchExecutor!, _palette.BatchViewModel);
-            // The REPL RPC handler is wired here too so propose calls fail
+            // The SCRIPT RPC handler is wired here too so propose calls fail
             // before the palette is open (no UI to display the staged
             // proposal). The handler doesn't need a VM — it operates on
             // the ScriptEditor directly — but gating on palette-open keeps
             // the agent's experience symmetric with BATCH and avoids the
             // "silent staging into the void" failure mode.
-            _replRpc = new ReplRpcHandler(_replScriptEditor!);
+            _scriptRpc = new ScriptRpcHandler(_scriptEditor!);
             _palette.Visible = true;
         });
 
         // Listener-side method dispatch. Three prefixes are handled here:
-        //   batch.* — routed to _batchRpc (requires the palette to be open).
-        //   repl.*  — routed to _replRpc  (requires the palette to be open
-        //             — see ShowPalette's note on staging-into-the-void).
-        //   dto.*   — routed to _dtoRpc   (always available once the DTO
-        //             graph is built; doesn't need the palette).
+        //   batch.*  — routed to _batchRpc  (requires the palette to be open).
+        //   script.* — routed to _scriptRpc (requires the palette to be open
+        //              — see ShowPalette's note on staging-into-the-void).
+        //   dto.*    — routed to _dtoRpc    (always available once the DTO
+        //              graph is built; doesn't need the palette).
         private static Task<object?> ExtraRpcMethodHandler(string method, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken ct)
         {
-            if (method.StartsWith("repl."))
+            if (method.StartsWith("script."))
             {
-                if (_replRpc is null)
+                if (_scriptRpc is null)
                     throw new InvalidOperationException(
-                        "REPL palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
-                return _replRpc.DispatchAsync(method, parameters, ct);
+                        "SCRIPT palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
+                return _scriptRpc.DispatchAsync(method, parameters, ct);
             }
             if (method.StartsWith("batch."))
             {
@@ -373,12 +380,12 @@ namespace Acd.Mcp
                 // "read-the-mirror-before-proposing" convention works
                 // independently for each flavor.
                 _scriptStore ??= new SavedScriptStore();
-                _batchScriptEditor ??= new ScriptEditor(
+                _batchEditor ??= new ScriptEditor(
                     ScriptFlavor.Batch, _scriptStore, new EditorBuffer());
-                _replScriptEditor ??= new ScriptEditor(
-                    ScriptFlavor.Repl, _scriptStore, new EditorBuffer(ReplMirrorPath));
-                _batchExecutor ??= new BatchExecutor(_batchScriptEditor);
-                // _replRpc is intentionally NOT constructed here — it's
+                _scriptEditor ??= new ScriptEditor(
+                    ScriptFlavor.Script, _scriptStore, new EditorBuffer(ScriptMirrorPath));
+                _batchExecutor ??= new BatchExecutor(_batchEditor);
+                // _scriptRpc is intentionally NOT constructed here — it's
                 // wired in ShowPalette() so a propose call that arrives
                 // before the palette is open fails loudly with the same
                 // "open the palette" guidance the BATCH path gives.
@@ -432,6 +439,74 @@ namespace Acd.Mcp
 
             SafeBoundary.Info("EnsureDtoGraph",
                 $"Registered {_dtoRegistry.RegisteredTypes.Count} DTO types.");
+        }
+
+        // Rename the pre-v0.3.0 paths to their new names. Idempotent: if
+        // the source doesn't exist we skip; if the destination already
+        // exists we leave the source orphaned (the user can delete it).
+        // Runs once per Initialize, before any path-consuming code.
+        private static void MigrateLegacyPaths()
+        {
+            var local = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Acd.Mcp");
+            var roaming = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "Acd.Mcp");
+
+            MigrateFile(System.IO.Path.Combine(local, "editor-buffer.csx"),
+                        System.IO.Path.Combine(local, "buffer-batch.csx"));
+            MigrateFile(System.IO.Path.Combine(local, "repl-buffer.csx"),
+                        System.IO.Path.Combine(local, "buffer-script.csx"));
+            MigrateDirectory(System.IO.Path.Combine(roaming, "scripts", "repl"),
+                             System.IO.Path.Combine(roaming, "scripts", "script"));
+        }
+
+        private static void MigrateFile(string oldPath, string newPath)
+        {
+            try
+            {
+                if (!System.IO.File.Exists(oldPath)) return;
+                if (System.IO.File.Exists(newPath)) return;
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(newPath)!);
+                System.IO.File.Move(oldPath, newPath);
+                SafeBoundary.Info("MigrateLegacyPaths", $"file {oldPath} -> {newPath}");
+            }
+            catch (Exception ex)
+            {
+                SafeBoundary.Report(ex, $"MigrateFile({oldPath} -> {newPath})");
+            }
+        }
+
+        private static void MigrateDirectory(string oldPath, string newPath)
+        {
+            try
+            {
+                if (!System.IO.Directory.Exists(oldPath)) return;
+                if (System.IO.Directory.Exists(newPath))
+                {
+                    // Merge: move individual files; skip names that already exist.
+                    foreach (var f in System.IO.Directory.GetFiles(oldPath))
+                    {
+                        var dest = System.IO.Path.Combine(newPath, System.IO.Path.GetFileName(f));
+                        if (!System.IO.File.Exists(dest)) System.IO.File.Move(f, dest);
+                    }
+                    if (System.IO.Directory.GetFiles(oldPath).Length == 0 &&
+                        System.IO.Directory.GetDirectories(oldPath).Length == 0)
+                    {
+                        System.IO.Directory.Delete(oldPath);
+                    }
+                }
+                else
+                {
+                    System.IO.Directory.Move(oldPath, newPath);
+                }
+                SafeBoundary.Info("MigrateLegacyPaths", $"dir {oldPath} -> {newPath}");
+            }
+            catch (Exception ex)
+            {
+                SafeBoundary.Report(ex, $"MigrateDirectory({oldPath} -> {newPath})");
+            }
         }
 
         private static void EditorMessage(string msg)

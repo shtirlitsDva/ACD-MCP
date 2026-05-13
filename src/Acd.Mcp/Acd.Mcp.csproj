@@ -10,9 +10,10 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 
-    <!-- WPF needed for the REPL palette. PresentationFramework / PresentationCore /
-         WindowsBase / System.Xaml must be added to DevReload's shared-assemblies
-         list so XAML resolves to the same types AutoCAD already uses. -->
+    <!-- WPF needed for the SCRIPT + BATCH palette. PresentationFramework /
+         PresentationCore / WindowsBase / System.Xaml must be added to DevReload's
+         shared-assemblies list so XAML resolves to the same types AutoCAD
+         already uses. -->
     <UseWPF>true</UseWPF>
 
     <!-- Required by ScriptSession.TryGetReferenceForLoadedAssembly which uses
@@ -29,7 +30,7 @@
 
   <ItemGroup>
     <!-- AvalonEdit loads syntax definitions from .xshd. Ours is embedded and
-         loaded explicitly in ReplControl.xaml.cs so the dark colours don't
+         loaded explicitly in ScriptControl.xaml.cs so the dark colours don't
          leak into other AvalonEdit instances in the process. -->
     <EmbeddedResource Include="Ui\Themes\CSharp-Dark.xshd" />
 
@@ -62,7 +63,7 @@
          session; runtime owns the loop, Outcome union, step DSL, history. -->
     <ProjectReference Include="..\Acd.Mcp.Batch\Acd.Mcp.Batch.csproj" />
 
-    <!-- Acd.Mcp.Api carries AcadGlobals (the REPL globalsType). It must end up
+    <!-- Acd.Mcp.Api carries AcadGlobals (the SCRIPT-session globalsType). It must end up
          in the default ALC, not the plugin's isolated ALC, so submission
          assemblies don't pin the isolated ALC across hot-reloads. Under
          DevReload that means adding "Acd.Mcp.Api" to the registration's

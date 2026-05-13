@@ -22,9 +22,9 @@ namespace Acd.Mcp.Ui
                 var time = Entry.Timestamp.ToLocalTime().ToString("HH:mm:ss");
                 var source = Entry.Source switch
                 {
-                    ExecutionSource.Mcp => "MCP ",
-                    ExecutionSource.Repl => "REPL",
-                    _ => "?   ",
+                    ExecutionSource.Mcp => "MCP   ",
+                    ExecutionSource.Script => "SCRIPT",
+                    _ => "?     ",
                 };
                 var status = Entry.Result.Success ? "OK  " : "FAIL";
                 var preview = Entry.Code.Replace("\r", "").Replace("\n", " ").Trim();

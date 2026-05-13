@@ -1,5 +1,5 @@
 <!--
-  Centralised dark theme for the Acd.Mcp REPL palette.
+  Centralised dark theme for the Acd.Mcp SCRIPT + BATCH palette.
 
   Matches AutoCAD 2025's own dark chrome. Every control type that has OS-themed
   parts (Button, TextBox, ListBox, ListBoxItem, ScrollBar + Thumb + RepeatButton,

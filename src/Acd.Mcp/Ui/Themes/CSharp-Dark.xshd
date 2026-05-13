@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
   Dark-themed C# syntax-highlighting definition for AvalonEdit.
-  Loaded explicitly at ReplControl construction so we own our own definition
+  Loaded explicitly at ScriptControl construction so we own our own definition
   rather than mutating HighlightingManager.Instance's shared C# definition
   (which would leak our colours into any other AvalonEdit instance in the
   AutoCAD process — e.g. DimensioneringV2's UI). VS-Code-dark-style colours.

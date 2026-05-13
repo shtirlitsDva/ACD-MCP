@@ -79,19 +79,38 @@ ctx.Step(""bump"").Apply(() => ""done"");";
         }
 
         [Fact]
-        public void BatchAndRepl_AreSeparateFolders()
+        public void BatchAndScript_AreSeparateFolders()
         {
             var store = new SavedScriptStore(_root);
             store.Save(ScriptFlavor.Batch, "same-name", "//batch body");
-            store.Save(ScriptFlavor.Repl, "same-name", "//repl body");
+            store.Save(ScriptFlavor.Script, "same-name", "//script body");
 
             var b = store.TryGet(ScriptFlavor.Batch, "same-name");
-            var r = store.TryGet(ScriptFlavor.Repl, "same-name");
+            var s = store.TryGet(ScriptFlavor.Script, "same-name");
 
             Assert.NotNull(b);
-            Assert.NotNull(r);
+            Assert.NotNull(s);
             Assert.Contains("//batch body", b!.Body);
-            Assert.Contains("//repl body", r!.Body);
+            Assert.Contains("//script body", s!.Body);
+        }
+
+        [Fact]
+        public void Read_LegacyReplFlavorHeader_MapsToScript()
+        {
+            var store = new SavedScriptStore(_root);
+            // Hand-write a file with the legacy header to simulate
+            // a pre-v0.3.0 saved script. After read it should report
+            // ScriptFlavor.Script (the legacy alias).
+            var folder = store.FolderFor(ScriptFlavor.Script);
+            Directory.CreateDirectory(folder);
+            var path = Path.Combine(folder, "legacy.csx");
+            File.WriteAllText(path,
+                "// @flavor: repl\n// @name: legacy\n// @summary: pre-rename\n//body\n");
+
+            var got = SavedScriptStore.Read(path, ScriptFlavor.Script);
+            Assert.Equal(ScriptFlavor.Script, got.Flavor);
+            Assert.Equal("legacy", got.Name);
+            Assert.Equal("pre-rename", got.Summary);
         }
 
         [Fact]

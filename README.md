@@ -1,6 +1,6 @@
 # ACD-MCP
 
-A Model Context Protocol server that exposes a **live C# REPL inside a running AutoCAD process**. An MCP client — Claude Code, Codex, GitHub Copilot, or Claude Desktop — sends C# code; the snippet compiles via Roslyn, runs on AutoCAD's main thread under a document lock, and returns its output — with state persisting between calls. Civil 3D objects are reachable from the same scripting surface.
+A Model Context Protocol server that exposes a **live C# script session inside a running AutoCAD process**. An MCP client — Claude Code, Codex, GitHub Copilot, or Claude Desktop — sends C# code; the snippet compiles via Roslyn, runs on AutoCAD's main thread under a document lock, and returns its output — with state persisting between calls. Civil 3D objects are reachable from the same scripting surface.
 
 Effectively: a dotnet command line attached to AutoCAD, driven by an LLM.
 
@@ -113,7 +113,7 @@ Two commands. Then a single PowerShell script for the AutoCAD side.
    /plugin install acd-mcp@acd-mcp
    ```
 
-   That registers `Bridge.exe` in Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces four skills: `/acd-mcp:start`, `/acd-mcp:repl`, `/acd-mcp:batch`, `/acd-mcp:add-dto`.
+   That registers `Bridge.exe` in Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces four skills: `/acd-mcp:start`, `/acd-mcp:script`, `/acd-mcp:batch`, `/acd-mcp:add-dto`.
 
    > `Bridge.exe` and its .NET 8 dependencies are committed to `bin/` at the repo root. Claude Code's marketplace install only fetches what's in git, so the binary lives there. `scripts/Build-Release.ps1` refreshes `bin/` and reminds the maintainer to commit. Users get it just by `/plugin install` — no separate download.
 
@@ -171,7 +171,7 @@ Common to both paths. After the bundle is in place:
 
 1. Launch AutoCAD 2025+. The bundle autoloads.
 2. Run `ACDMCP_START` to open the named pipe.
-3. (Optional) Run `ACDMCP_PALETTE` for the dockable REPL + BATCH palette.
+3. (Optional) Run `ACDMCP_PALETTE` for the dockable SCRIPT + BATCH palette.
 
 ### Uninstall
 
@@ -212,7 +212,7 @@ So `git tag v0.2.0 && git push --tags` is sufficient to cut a release — no man
 | `ACDMCP_STOP` | Stop the listener. |
 | `ACDMCP_STATUS` | Report listener state, PID, pipe name, session state. |
 | `ACDMCP_RESET` | Drop the script session — variables/usings declared so far are gone. |
-| `ACDMCP_PALETTE` | Open the dockable palette with two tabs — **REPL** (AvalonEdit + C# highlighting + live execution log, shares the script session with the MCP so `var x = 5` typed in the palette is visible to the LLM's next `autocad_execute_csharp` call, and vice versa) and **BATCH** (folder + mask + file list + Test/Live slide-switch + Manage Scripts). Wiring the palette also activates the `batch.*` and `repl.*` plugin RPC methods (`autocad_batch_*` / `autocad_repl_propose_script` MCP tools require it). |
+| `ACDMCP_PALETTE` | Open the dockable palette with two tabs — **SCRIPT** (AvalonEdit + C# highlighting + live execution log, shares the script session with the MCP so `var x = 5` typed in the palette is visible to the LLM's next `autocad_script_execute` call, and vice versa) and **BATCH** (folder + mask + file list + Test/Live slide-switch + Manage Scripts). Wiring the palette also activates the `batch.*` and `script.*` plugin RPC methods (`autocad_batch_*` / `autocad_script_propose` MCP tools require it). |
 
 ### Palette / WPF note
 
@@ -234,9 +234,9 @@ Same text is also echoed to AutoCAD's command line and to `System.Diagnostics.Tr
 
 Five tools, four resources. Tool annotations follow the MCP spec (`ReadOnly` / `Destructive` / `Idempotent` / `OpenWorld`).
 
-### Response shape (batch tools + repl-propose tool)
+### Response shape (batch tools + script-propose tool)
 
-`autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_batch_get_selection`, and `autocad_repl_propose_script` all return a **discriminated success-shape**. Always check `ok` first:
+`autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_batch_get_selection`, and `autocad_script_propose` all return a **discriminated success-shape**. Always check `ok` first:
 
 ```
 { ok: true,  ...payload fields..., error_code: null, error_message: null }   # success
@@ -246,17 +246,17 @@ Five tools, four resources. Tool annotations follow the MCP spec (`ReadOnly` / `
 
 The bridge never throws on plugin-rejected failures — those used to be stripped to a generic "An error occurred invoking ..." by the MCP SDK. The plugin's verbatim message now travels on the success path in `error_message`. Typical `ok: false` cases: palette not open, no folder/mask selected, empty editor buffer. See `CRASH_TEST_V2_JOURNAL.md#g4` for the design rationale.
 
-`autocad_execute_csharp` is the exception — it returns its own structured `ExecuteResult` (`success` / `stdout` / `stderr` / `diagnostics`), not the discriminated shape. Snippet failures already travel inside the success envelope (compile errors → `diagnostics`; runtime exceptions → `stderr`); no thrown path needs wrapping.
+`autocad_script_execute` is the exception — it returns its own structured `ExecuteResult` (`success` / `stdout` / `stderr` / `diagnostics`), not the discriminated shape. Snippet failures already travel inside the success envelope (compile errors → `diagnostics`; runtime exceptions → `stderr`); no thrown path needs wrapping.
 
 ### Tools
 
-* **`autocad_execute_csharp(code, timeout_ms?)`** — *not-read-only, destructive, not-idempotent, open-world.*
+* **`autocad_script_execute(code, timeout_ms?)`** — *not-read-only, destructive, not-idempotent, open-world.*
 
-  Run C# inside AutoCAD's main thread under a document lock. Globals: `Doc` (active `Document`), `Db` (`Database`), `Ed` (`Editor`), `CivilDoc` (active `CivilDocument` — null in non-Civil drawings), `Acd` (DTO + DataProvider façade). Default imports: `System` + LINQ + IO + Text plus `Autodesk.AutoCAD.{ApplicationServices,DatabaseServices,Geometry,EditorInput,Runtime}`. `Autodesk.Civil.*` is **NOT** in the defaults — it defines its own `Entity` which would collide; add `using Autodesk.Civil.DatabaseServices;` at the top of a submission when needed. Top-level declarations persist between calls. Returns an `ExecuteResult` with `success`, `returnValueRepr`, `returnValueJson` (DTO-projected), `diagnostics`, `stdout`, `stderr`, `elapsedMs`.
+  Run C# inside AutoCAD's main thread under a document lock against the active drawing. Globals: `Doc` (active `Document`), `Db` (`Database`), `Ed` (`Editor`), `CivilDoc` (active `CivilDocument` — null in non-Civil drawings), `Acd` (DTO + DataProvider façade). Default imports: `System` + LINQ + IO + Text plus `Autodesk.AutoCAD.{ApplicationServices,DatabaseServices,Geometry,EditorInput,Runtime}`. `Autodesk.Civil.*` is **NOT** in the defaults — it defines its own `Entity` which would collide; add `using Autodesk.Civil.DatabaseServices;` at the top of a submission when needed. Top-level declarations persist between calls. Returns an `ExecuteResult` with `success`, `return_value_repr`, `return_value_json` (DTO-projected), `diagnostics`, `stdout`, `stderr`, `elapsed_ms`.
 
 * **`autocad_batch_propose_script(name, script_body, input_summary?)`** — *not-read-only, not-destructive, idempotent, open-world.*
 
-  Save a batch-flavour C# script to `%APPDATA%\Acd.Mcp\scripts\batch\<name>.csx` and push it into the BATCH palette's live editor. The agent should read `%LOCALAPPDATA%\Acd.Mcp\editor-buffer.csx` first so it doesn't trample in-progress user edits. Success payload: `{ saved_as, name, replaced_dirty }`. See `/acd-mcp:batch`.
+  Save a batch-flavour C# script to `%APPDATA%\Acd.Mcp\scripts\batch\<name>.csx` and push it into the BATCH palette's live editor. The agent should read `%LOCALAPPDATA%\Acd.Mcp\buffer-batch.csx` first so it doesn't trample in-progress user edits. Success payload: `{ saved_as, name, replaced_dirty }`. See `/acd-mcp:batch`.
 
 * **`autocad_batch_run_test(name?)`** — *read-only, not-destructive, not-idempotent, open-world.*
 
@@ -266,9 +266,9 @@ The bridge never throws on plugin-rejected failures — those used to be strippe
 
   Return what TEST would operate on right now. Success payload: `{ folder, mask, recurse, files: [...], count }`. The agent cannot change these — only the user can, via the palette.
 
-* **`autocad_repl_propose_script(name, script_body, input_summary?)`** — *not-read-only, not-destructive, idempotent, open-world.*
+* **`autocad_script_propose(name, script_body, input_summary?)`** — *not-read-only, not-destructive, idempotent, open-world.*
 
-  Save a repl-flavour C# script to `%APPDATA%\Acd.Mcp\scripts\repl\<name>.csx` and stage it in the REPL palette editor for the user to review/edit before running. Same response shape as the batch propose tool: `{ saved_as, name, replaced_dirty }`. On a clean editor the proposal inline-promotes (`replaced_dirty: false`); on a dirty editor the user is prompted asynchronously (`replaced_dirty: true`) — see `/acd-mcp:repl` for the full workflow. The agent should read `%LOCALAPPDATA%\Acd.Mcp\repl-buffer.csx` before calling to capture any user hand-edits.
+  Save a single-drawing C# script to `%APPDATA%\Acd.Mcp\scripts\script\<name>.csx` and stage it in the SCRIPT palette tab's editor for the user to review/edit before running. Same response shape as the batch propose tool: `{ saved_as, name, replaced_dirty }`. On a clean editor the proposal inline-promotes (`replaced_dirty: false`); on a dirty editor the user is prompted asynchronously (`replaced_dirty: true`) — see `/acd-mcp:script` for the full workflow. The agent should read `%LOCALAPPDATA%\Acd.Mcp\buffer-script.csx` before calling to capture any user hand-edits.
 
 ### Resources
 
@@ -283,7 +283,7 @@ See [`docs/design/architecture.md`](docs/design/architecture.md) for the full de
 
 * **The snippet blocks AutoCAD's main thread for its duration.** Same as any `[CommandMethod]`. A cooperative `timeout_ms` cancels at the next `CancellationToken` check; a snippet that spins without observing it cannot be interrupted without killing AutoCAD.
 * **No sandbox.** Arbitrary C# inside the AutoCAD process means full process privileges. Treat this as a trusted developer tool. The named pipe's default ACL restricts access to the current user session.
-* **Roslyn-emitted assemblies accumulate.** Each `autocad_execute_csharp` call emits a fresh script assembly into the default `AssemblyLoadContext` (which is not collectible). `ACDMCP_RESET` drops the script state; an AutoCAD restart frees the assembly memory.
+* **Roslyn-emitted assemblies accumulate.** Each `autocad_script_execute` call emits a fresh script assembly into the default `AssemblyLoadContext` (which is not collectible). `ACDMCP_RESET` drops the script state; an AutoCAD restart frees the assembly memory.
 * **Modal AutoCAD dialogs deadlock the pipe.** If AutoCAD is showing a modal (plot preview, etc.), the message pump is busy and main-thread marshaling waits until the modal closes. Use `timeout_ms` to surface this.
 
 ## License

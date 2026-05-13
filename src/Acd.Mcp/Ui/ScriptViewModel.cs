@@ -10,7 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Acd.Mcp.Ui
 {
-    // The REPL palette's view-model. Owns:
+    // The SCRIPT palette tab's view-model. Owns:
     //   - the editor text (CurrentCode), wired through the shared
     //     ScriptEditor deep module so the agent's propose / saved-store /
     //     mirror-file mechanics are identical to the BATCH side;
@@ -28,7 +28,7 @@ namespace Acd.Mcp.Ui
     // a binding error, or a broken subscriber cannot crash AutoCAD's
     // WPF dispatcher. The dispatcher's own UnhandledException event is
     // hooked here too as a last-line safety net.
-    public sealed partial class ReplViewModel : ObservableObject, IDisposable, IManageScriptsTarget
+    public sealed partial class ScriptViewModel : ObservableObject, IDisposable, IManageScriptsTarget
     {
         private readonly AcadExecutor _executor;
         private readonly ExecutionLog _log;
@@ -76,7 +76,7 @@ namespace Acd.Mcp.Ui
         string IManageScriptsTarget.CurrentScriptText => CurrentCode;
         bool IManageScriptsTarget.LoadSavedScript(SavedScript saved) => LoadSavedScript(saved);
 
-        public ReplViewModel(AcadExecutor executor, ScriptSession session, ExecutionLog log, ScriptEditor scriptEditor)
+        public ScriptViewModel(AcadExecutor executor, ScriptSession session, ExecutionLog log, ScriptEditor scriptEditor)
         {
             _executor = executor;
             _log = log;
@@ -102,7 +102,7 @@ namespace Acd.Mcp.Ui
             // Seed with anything that was already in the log when the
             // palette opened (e.g. MCP calls that happened before the
             // user clicked ACDMCP_PALETTE).
-            SafeBoundary.Run("ReplViewModel.ctor/seed", () =>
+            SafeBoundary.Run("ScriptViewModel.ctor/seed", () =>
             {
                 foreach (var entry in _log.Snapshot())
                     LogEntries.Add(new LogEntryViewModel(entry));
@@ -132,14 +132,14 @@ namespace Acd.Mcp.Ui
             IsRunning = true;
             try
             {
-                await SafeBoundary.RunAsync("ReplViewModel.Run", async () =>
+                await SafeBoundary.RunAsync("ScriptViewModel.Run", async () =>
                 {
                     // AcadExecutor itself converts every script-level
                     // failure to an ExecuteResult; this wrapper catches
                     // the unexpected (the executor itself misbehaving,
                     // a logger throwing, etc.).
                     _ = await _executor.ExecuteAsync(
-                        CurrentCode, timeoutMs: null, ExecutionSource.Repl, CancellationToken.None)
+                        CurrentCode, timeoutMs: null, ExecutionSource.Script, CancellationToken.None)
                         .ConfigureAwait(true);
                 }).ConfigureAwait(true);
             }
@@ -154,21 +154,21 @@ namespace Acd.Mcp.Ui
         partial void OnIsRunningChanged(bool value) => RunCommand.NotifyCanExecuteChanged();
 
         [RelayCommand]
-        private void ResetSession() => SafeBoundary.Run("ReplViewModel.ResetSession", () =>
+        private void ResetSession() => SafeBoundary.Run("ScriptViewModel.ResetSession", () =>
         {
             _executor.Reset();
             ContextInspector.Refresh();
         });
 
         [RelayCommand]
-        private void ClearLog() => SafeBoundary.Run("ReplViewModel.ClearLog", () =>
+        private void ClearLog() => SafeBoundary.Run("ScriptViewModel.ClearLog", () =>
         {
             LogEntries.Clear();
             UpdateStatus();
         });
 
         [RelayCommand]
-        private void Scripts() => SafeBoundary.Run("ReplViewModel.Scripts", () =>
+        private void Scripts() => SafeBoundary.Run("ScriptViewModel.Scripts", () =>
         {
             var win = new ManageScriptsWindow(_scriptEditor, this);
             win.Owner = Application.Current?.MainWindow;
@@ -182,7 +182,7 @@ namespace Acd.Mcp.Ui
         public bool LoadSavedScript(SavedScript saved)
         {
             bool applied = false;
-            SafeBoundary.Run("ReplViewModel.LoadSavedScript", () =>
+            SafeBoundary.Run("ScriptViewModel.LoadSavedScript", () =>
             {
                 if (IsDirty && CurrentCode != saved.Body)
                 {
@@ -243,7 +243,7 @@ namespace Acd.Mcp.Ui
             // the AutoCAD main thread (the executor's Post handler) or,
             // in some edge cases during shutdown, a threadpool thread.
             // Wrap the marshal so a disposed dispatcher cannot escape.
-            SafeBoundary.Run("ReplViewModel.OnEntryAdded", () =>
+            SafeBoundary.Run("ScriptViewModel.OnEntryAdded", () =>
             {
                 if (_dispatcher.CheckAccess())
                     AddEntryOnDispatcher(entry);
@@ -254,7 +254,7 @@ namespace Acd.Mcp.Ui
 
         private void AddEntryOnDispatcher(LogEntry entry)
         {
-            SafeBoundary.Run("ReplViewModel.AddEntryOnDispatcher", () =>
+            SafeBoundary.Run("ScriptViewModel.AddEntryOnDispatcher", () =>
             {
                 LogEntries.Insert(0, new LogEntryViewModel(entry));
                 // Keep the UI list bounded — ExecutionLog is already
@@ -277,20 +277,20 @@ namespace Acd.Mcp.Ui
         private void UpdateStatus()
         {
             int total = LogEntries.Count;
-            int mcp = 0, repl = 0;
+            int mcp = 0, script = 0;
             foreach (var e in LogEntries)
             {
                 if (e.Entry.Source == ExecutionSource.Mcp) mcp++;
-                else if (e.Entry.Source == ExecutionSource.Repl) repl++;
+                else if (e.Entry.Source == ExecutionSource.Script) script++;
             }
-            StatusLine = $"{total} entries  ({mcp} MCP, {repl} REPL)";
+            StatusLine = $"{total} entries  ({mcp} MCP, {script} SCRIPT)";
         }
 
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
-            SafeBoundary.Run("ReplViewModel.Dispose", () =>
+            SafeBoundary.Run("ScriptViewModel.Dispose", () =>
             {
                 _log.EntryAdded -= OnEntryAdded;
                 _scriptEditor.ScriptProposed -= OnScriptProposed;

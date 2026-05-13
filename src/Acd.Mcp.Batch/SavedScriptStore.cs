@@ -6,12 +6,12 @@ using System.Text.RegularExpressions;
 
 namespace Acd.Mcp.Batch
 {
-    // Two flavors only — batch (side-loaded database) and repl (palette
-    // free-form). See <flavors> in the spec.
+    // Two flavors only — batch (side-loaded database) and script (single-
+    // drawing palette free-form). See <flavors> in the spec.
     public enum ScriptFlavor
     {
         Batch,
-        Repl,
+        Script,
     }
 
     // A persisted script on disk. Header lines (// @flavor:, // @name:,
@@ -26,10 +26,13 @@ namespace Acd.Mcp.Batch
 
     // Filesystem-backed catalogue:
     //   %APPDATA%\Acd.Mcp\scripts\batch\
-    //   %APPDATA%\Acd.Mcp\scripts\repl\
+    //   %APPDATA%\Acd.Mcp\scripts\script\
     //
     // Pure I/O; no AutoCAD, no UI. Both the agent (via the MCP tool) and
     // the user (via the Manage Scripts window) call into this same store.
+    //
+    // Legacy folder %APPDATA%\Acd.Mcp\scripts\repl\ is migrated to
+    // scripts\script\ once at plugin Initialize (see McpPlugin.MigrateLegacyPaths).
     public sealed class SavedScriptStore
     {
         public string Root { get; }
@@ -38,11 +41,11 @@ namespace Acd.Mcp.Batch
         {
             Root = rootOverride ?? DefaultRoot();
             Directory.CreateDirectory(System.IO.Path.Combine(Root, "batch"));
-            Directory.CreateDirectory(System.IO.Path.Combine(Root, "repl"));
+            Directory.CreateDirectory(System.IO.Path.Combine(Root, "script"));
         }
 
         public string FolderFor(ScriptFlavor flavor) =>
-            System.IO.Path.Combine(Root, flavor == ScriptFlavor.Batch ? "batch" : "repl");
+            System.IO.Path.Combine(Root, flavor == ScriptFlavor.Batch ? "batch" : "script");
 
         // Pagination on listing. Default 50, max 200 — usually well below
         // the threshold a single response would overflow, but we still cap.
@@ -142,7 +145,12 @@ namespace Acd.Mcp.Batch
                 switch (key)
                 {
                     case "flavor":
-                        if (Enum.TryParse<ScriptFlavor>(val, ignoreCase: true, out var f)) flavor = f;
+                        // Legacy header value `repl` maps to ScriptFlavor.Script
+                        // so files saved before the rename keep parsing cleanly.
+                        if (val.Equals("repl", StringComparison.OrdinalIgnoreCase))
+                            flavor = ScriptFlavor.Script;
+                        else if (Enum.TryParse<ScriptFlavor>(val, ignoreCase: true, out var f))
+                            flavor = f;
                         break;
                     case "name": name = val; break;
                     case "summary": summary = val; break;
@@ -165,7 +173,7 @@ namespace Acd.Mcp.Batch
             // semantics.
             var nl = Environment.NewLine;
             var header =
-                $"// @flavor: {(flavor == ScriptFlavor.Batch ? "batch" : "repl")}{nl}" +
+                $"// @flavor: {(flavor == ScriptFlavor.Batch ? "batch" : "script")}{nl}" +
                 $"// @name: {name}{nl}";
             if (!string.IsNullOrEmpty(summary))
                 header += $"// @summary: {summary}{nl}";

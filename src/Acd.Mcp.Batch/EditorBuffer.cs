@@ -6,23 +6,20 @@ namespace Acd.Mcp.Batch
     // so a flurry of keystrokes doesn't translate into a flurry of
     // disk writes.
     //
-    // One EditorBuffer per ScriptEditor — BATCH and REPL each point at
-    // their own mirror path. The default path is the batch mirror
-    // (preserved for backwards compatibility with the existing
-    // skills/docs); REPL instances pass an explicit pathOverride.
+    // One EditorBuffer per ScriptEditor — BATCH and SCRIPT each point
+    // at their own mirror path. Mirror file names use a buffer-<flavor>
+    // convention so the two files sort next to each other in Explorer.
     //
     // Thread-safe: SetText can be called from the WPF dispatcher; the
     // debounce timer's callback fires on a threadpool thread.
     public sealed class EditorBuffer : IDisposable
     {
-        // Batch's historical mirror path. Phase 1 of the ScriptEditor
-        // refactor preserves this so the published skill docs keep
-        // working; the REPL mirror lives at a sibling path passed
-        // explicitly by the REPL wiring.
+        // BATCH editor mirror path. SCRIPT instances pass an explicit
+        // pathOverride to point at buffer-script.csx in the same folder.
         public static string DefaultPath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Acd.Mcp",
-            "editor-buffer.csx");
+            "buffer-batch.csx");
 
         private readonly string _path;
         private readonly TimeSpan _debounce;

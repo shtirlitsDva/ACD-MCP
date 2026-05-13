@@ -3,7 +3,7 @@ namespace Acd.Mcp
     public enum ExecutionSource
     {
         Mcp,    // came in over the named pipe
-        Repl,   // ran from the in-process REPL palette
+        Script, // ran from the in-process SCRIPT palette tab
     }
 
     public sealed record LogEntry(
@@ -13,7 +13,7 @@ namespace Acd.Mcp
         ExecuteResult Result);
 
     // Single observable buffer of recent executions. Both the MCP pipe and the
-    // in-process REPL palette feed this through AcadExecutor; the palette VM
+    // in-process SCRIPT palette feed this through AcadExecutor; the palette VM
     // subscribes to EntryAdded and projects entries onto its WPF collection.
     //
     // Thread-safe: Add can be called from the pipe's threadpool task or from the

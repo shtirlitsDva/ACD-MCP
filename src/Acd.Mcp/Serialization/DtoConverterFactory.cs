@@ -41,10 +41,15 @@ namespace Acd.Mcp.Serialization
 
         internal static bool IsAcadType(Type t)
         {
+            // Any Autodesk-namespaced type goes through DTO projection.
+            // Without a registered DTO, the converter emits the
+            // $unsupported marker — preferable to STJ's default which
+            // can either explode on transaction-bound properties or
+            // leak internal state. Covers Autodesk.AutoCAD.*,
+            // Autodesk.Aec.*, Autodesk.Civil.*, Autodesk.Map.*, etc.
             var ns = t.Namespace;
             if (ns is null) return false;
-            return ns.StartsWith("Autodesk.AutoCAD", StringComparison.Ordinal)
-                || ns.StartsWith("Autodesk.Aec", StringComparison.Ordinal);
+            return ns.StartsWith("Autodesk", StringComparison.Ordinal);
         }
     }
 

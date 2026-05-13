@@ -4,33 +4,34 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acd.Mcp.Batch;
 
-namespace Acd.Mcp.Repl
+namespace Acd.Mcp.Script
 {
-    // Pipe RPC surface for REPL-related calls. Mirrors BatchRpcHandler's
-    // shape so the BATCH and REPL flows are read with the same approach.
+    // Pipe RPC surface for SCRIPT-flavor calls (single-drawing operations
+    // against the active document). Mirrors BatchRpcHandler's shape so
+    // the BATCH and SCRIPT flows are read with the same approach.
     //
     // The methods stay narrow:
-    //   repl.proposeScript   — agent writes a script + stages it in
-    //                          the REPL editor (UI accepts/discards).
-    //   repl.getEditor       — fetch the editor's current text + mirror
-    //                          path (the agent's "read-before-propose"
-    //                          input).
-    //   repl.listSavedScripts — paginated saved-script list (Repl flavor).
-    //   repl.getSavedScript   — fetch one saved script by name.
+    //   script.proposeScript    — agent writes a script + stages it in
+    //                             the SCRIPT editor (UI accepts/discards).
+    //   script.getEditor        — fetch the editor's current text + mirror
+    //                             path (the agent's "read-before-propose"
+    //                             input).
+    //   script.listSavedScripts — paginated saved-script list (Script flavor).
+    //   script.getSavedScript   — fetch one saved script by name.
     //
-    // The REPL has no folder/mask/file selection or run-test analog —
-    // direct execution stays on the existing autocad_execute_csharp
+    // The SCRIPT surface has no folder/mask/file selection or run-test
+    // analog — direct execution stays on the existing autocad_script_execute
     // path (see McpPlugin's pipe handler for that route).
-    internal sealed class ReplRpcHandler
+    internal sealed class ScriptRpcHandler
     {
         private readonly ScriptEditor _editor;
 
-        public ReplRpcHandler(ScriptEditor editor)
+        public ScriptRpcHandler(ScriptEditor editor)
         {
             if (editor is null) throw new ArgumentNullException(nameof(editor));
-            if (editor.Flavor != ScriptFlavor.Repl)
+            if (editor.Flavor != ScriptFlavor.Script)
                 throw new ArgumentException(
-                    $"ReplRpcHandler requires a ScriptEditor with Flavor=Repl (got {editor.Flavor}).",
+                    $"ScriptRpcHandler requires a ScriptEditor with Flavor=Script (got {editor.Flavor}).",
                     nameof(editor));
             _editor = editor;
         }
@@ -39,10 +40,10 @@ namespace Acd.Mcp.Repl
         {
             object? result = method switch
             {
-                "repl.proposeScript"    => HandleProposeScript(parameters),
-                "repl.getEditor"        => HandleGetEditor(),
-                "repl.listSavedScripts" => HandleListSavedScripts(parameters),
-                "repl.getSavedScript"   => HandleGetSavedScript(parameters),
+                "script.proposeScript"    => HandleProposeScript(parameters),
+                "script.getEditor"        => HandleGetEditor(),
+                "script.listSavedScripts" => HandleListSavedScripts(parameters),
+                "script.getSavedScript"   => HandleGetSavedScript(parameters),
                 _ => null,
             };
             return Task.FromResult(result);
@@ -84,13 +85,13 @@ namespace Acd.Mcp.Repl
         {
             int limit = GetOptionalInt(p, "limit") ?? 50;
             int offset = GetOptionalInt(p, "offset") ?? 0;
-            var scripts = _editor.Store.List(ScriptFlavor.Repl, limit, offset);
+            var scripts = _editor.Store.List(ScriptFlavor.Script, limit, offset);
             return new
             {
-                flavor = "repl",
+                flavor = "script",
                 limit,
                 offset,
-                total = _editor.Store.Count(ScriptFlavor.Repl),
+                total = _editor.Store.Count(ScriptFlavor.Script),
                 entries = System.Linq.Enumerable.Select(scripts, s => new
                 {
                     name = s.Name,
@@ -104,8 +105,8 @@ namespace Acd.Mcp.Repl
         private object HandleGetSavedScript(JsonElement p)
         {
             var name = GetRequiredString(p, "name");
-            var s = _editor.Store.TryGet(ScriptFlavor.Repl, name);
-            if (s is null) throw new InvalidOperationException($"No saved repl script named '{name}'.");
+            var s = _editor.Store.TryGet(ScriptFlavor.Script, name);
+            if (s is null) throw new InvalidOperationException($"No saved script named '{name}'.");
             return new { name = s.Name, flavor = s.Flavor.ToString().ToLowerInvariant(), summary = s.Summary, body = s.Body, path = s.Path };
         }
 
