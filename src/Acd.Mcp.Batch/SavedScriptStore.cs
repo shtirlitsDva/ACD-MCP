@@ -30,9 +30,6 @@ namespace Acd.Mcp.Batch
     //
     // Pure I/O; no AutoCAD, no UI. Both the agent (via the MCP tool) and
     // the user (via the Manage Scripts window) call into this same store.
-    //
-    // Legacy folder %APPDATA%\Acd.Mcp\scripts\repl\ is migrated to
-    // scripts\script\ once at plugin Initialize (see McpPlugin.MigrateLegacyPaths).
     public sealed class SavedScriptStore
     {
         public string Root { get; }
@@ -145,12 +142,7 @@ namespace Acd.Mcp.Batch
                 switch (key)
                 {
                     case "flavor":
-                        // Legacy header value `repl` maps to ScriptFlavor.Script
-                        // so files saved before the rename keep parsing cleanly.
-                        if (val.Equals("repl", StringComparison.OrdinalIgnoreCase))
-                            flavor = ScriptFlavor.Script;
-                        else if (Enum.TryParse<ScriptFlavor>(val, ignoreCase: true, out var f))
-                            flavor = f;
+                        if (Enum.TryParse<ScriptFlavor>(val, ignoreCase: true, out var f)) flavor = f;
                         break;
                     case "name": name = val; break;
                     case "summary": summary = val; break;

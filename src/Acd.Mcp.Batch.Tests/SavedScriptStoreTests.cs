@@ -95,25 +95,6 @@ ctx.Step(""bump"").Apply(() => ""done"");";
         }
 
         [Fact]
-        public void Read_LegacyReplFlavorHeader_MapsToScript()
-        {
-            var store = new SavedScriptStore(_root);
-            // Hand-write a file with the legacy header to simulate
-            // a pre-v0.3.0 saved script. After read it should report
-            // ScriptFlavor.Script (the legacy alias).
-            var folder = store.FolderFor(ScriptFlavor.Script);
-            Directory.CreateDirectory(folder);
-            var path = Path.Combine(folder, "legacy.csx");
-            File.WriteAllText(path,
-                "// @flavor: repl\n// @name: legacy\n// @summary: pre-rename\n//body\n");
-
-            var got = SavedScriptStore.Read(path, ScriptFlavor.Script);
-            Assert.Equal(ScriptFlavor.Script, got.Flavor);
-            Assert.Equal("legacy", got.Name);
-            Assert.Equal("pre-rename", got.Summary);
-        }
-
-        [Fact]
         public void Save_SanitisesUnsafeNames()
         {
             var store = new SavedScriptStore(_root);

@@ -109,12 +109,6 @@ namespace Acd.Mcp
                 SafeBoundary.Info("Initialize", $"{Version} (PID {Process.GetCurrentProcess().Id}, log: {SafeBoundary.LogFile})");
                 EditorMessage($"[ACD-MCP] Initialize() {Version} @ {DateTime.Now:HH:mm:ss}");
 
-                // Migrate pre-rename paths in place so users with saved
-                // REPL scripts keep them. Idempotent: skips when targets
-                // exist or sources don't. See MigrateLegacyPaths body.
-                SafeBoundary.Run("McpPlugin.Initialize/migrate-legacy-paths",
-                    MigrateLegacyPaths);
-
                 // Force-load the AECC PropertyData assembly so PropertySetProvider's
                 // type probe (run when EnsureDtoGraph builds the composite) can find
                 // the AECC types. AutoCAD lazy-loads AecPropDataMgd; without this
@@ -439,74 +433,6 @@ namespace Acd.Mcp
 
             SafeBoundary.Info("EnsureDtoGraph",
                 $"Registered {_dtoRegistry.RegisteredTypes.Count} DTO types.");
-        }
-
-        // Rename the pre-v0.3.0 paths to their new names. Idempotent: if
-        // the source doesn't exist we skip; if the destination already
-        // exists we leave the source orphaned (the user can delete it).
-        // Runs once per Initialize, before any path-consuming code.
-        private static void MigrateLegacyPaths()
-        {
-            var local = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Acd.Mcp");
-            var roaming = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Acd.Mcp");
-
-            MigrateFile(System.IO.Path.Combine(local, "editor-buffer.csx"),
-                        System.IO.Path.Combine(local, "buffer-batch.csx"));
-            MigrateFile(System.IO.Path.Combine(local, "repl-buffer.csx"),
-                        System.IO.Path.Combine(local, "buffer-script.csx"));
-            MigrateDirectory(System.IO.Path.Combine(roaming, "scripts", "repl"),
-                             System.IO.Path.Combine(roaming, "scripts", "script"));
-        }
-
-        private static void MigrateFile(string oldPath, string newPath)
-        {
-            try
-            {
-                if (!System.IO.File.Exists(oldPath)) return;
-                if (System.IO.File.Exists(newPath)) return;
-                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(newPath)!);
-                System.IO.File.Move(oldPath, newPath);
-                SafeBoundary.Info("MigrateLegacyPaths", $"file {oldPath} -> {newPath}");
-            }
-            catch (Exception ex)
-            {
-                SafeBoundary.Report(ex, $"MigrateFile({oldPath} -> {newPath})");
-            }
-        }
-
-        private static void MigrateDirectory(string oldPath, string newPath)
-        {
-            try
-            {
-                if (!System.IO.Directory.Exists(oldPath)) return;
-                if (System.IO.Directory.Exists(newPath))
-                {
-                    // Merge: move individual files; skip names that already exist.
-                    foreach (var f in System.IO.Directory.GetFiles(oldPath))
-                    {
-                        var dest = System.IO.Path.Combine(newPath, System.IO.Path.GetFileName(f));
-                        if (!System.IO.File.Exists(dest)) System.IO.File.Move(f, dest);
-                    }
-                    if (System.IO.Directory.GetFiles(oldPath).Length == 0 &&
-                        System.IO.Directory.GetDirectories(oldPath).Length == 0)
-                    {
-                        System.IO.Directory.Delete(oldPath);
-                    }
-                }
-                else
-                {
-                    System.IO.Directory.Move(oldPath, newPath);
-                }
-                SafeBoundary.Info("MigrateLegacyPaths", $"dir {oldPath} -> {newPath}");
-            }
-            catch (Exception ex)
-            {
-                SafeBoundary.Report(ex, $"MigrateDirectory({oldPath} -> {newPath})");
-            }
         }
 
         private static void EditorMessage(string msg)
