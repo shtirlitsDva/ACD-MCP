@@ -35,7 +35,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v22-script-rename";
+        private const string Version = "v23-resource-manager";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
