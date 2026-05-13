@@ -181,7 +181,7 @@ DevReload hot-swaps the plugin's isolated ALC. The procedure for an iteration lo
 3. **Close the ACD-MCP palette** before reloading. The palette holds a static `_palette` reference plus a Win32 `Window.Handle`; reloading without closing was reported to leak/wedge. Two ways to close from inside the REPL just before reload:
    - Run the AutoCAD command `ACDMCP_PALETTE` to toggle it shut, OR
    - Call `McpPlugin._palette.Close()` reflectively.
-4. **Trigger DevReload's "reload ACD-MCP" action.** Find DevReload's public API or its reload command (TODO: confirm exact command/method during the first iteration of the fix loop, then update this doc).
+4. **Trigger DevReload's reload via the per-plugin commands.** DevReload registers `<commandPrefix>UNLOAD` and `<commandPrefix>LOAD` for every plugin in `%APPDATA%\DevReload\plugins.json`. For ACD-MCP (`commandPrefix: ACDMCP`), that's `ACDMCPUNLOAD` then `ACDMCPLOAD`. The unload tears down the collectible ALC; the load streams the fresh bytes back in. **Caveat from this session:** even after `ACDMCPUNLOAD`, AutoCAD held a `FileShare.Read` lock on `Acd.Mcp.dll` long enough to fail an immediate `dotnet build`. Workarounds: `mv Acd.Mcp.dll Acd.Mcp.dll.old; dotnet build` (let the new build write a fresh file), or kill AutoCAD entirely if the loop is short.
 5. **Re-run `ACDMCP_START`** to wake the pipe listener. First call after a fresh ALC takes a few seconds (Roslyn warm-up, DTO graph rebuild).
 6. **Re-run `ACDMCP_PALETTE`** to bring the palette back. Only needed if the user wants visual confirmation; AFK testing can skip this and drive `_batchRpc._uiState` directly once `_batchExecutor` is non-null.
 
@@ -219,5 +219,147 @@ This recipe replaces an MCP-server install for THIS plugin in THIS session. Reac
 
 For everything inside ACD-MCP's own UI, reflection from the REPL is faster, more deterministic, and survives across builds without retraining.
 </when-to-reach-for-an-mcp-server>
+
+<autonomous-bootstrap>
+The reflection harness above assumes the plugin is **already loaded and the pipe is up**. When the agent has to bring up a fresh Civil 3D from a cold machine — no user at the keyboard, no existing AutoCAD process — there is a four-step bootstrap chain. This section captures everything that worked in the v18 G6 verification (2026-05-13). Every step has a non-obvious gotcha; together they get from "no Civil 3D" to "agent has a live `autocad_execute_csharp` pipe" without a human in the loop.
+
+<step-1-launch-with-automation>
+The standard Start-Menu shortcut for Civil 3D 2025 Metric expands to:
+```
+acad.exe /ld "C:\Program Files\Autodesk\AutoCAD 2025\AecBase.dbx"
+         /p "<<C3D_Metric>>"
+         /product C3D
+         /language en-US
+```
+Adding `/Automation` runs Civil 3D as a **hidden, out-of-process COM server**: the MDI frame is created but `IsWindowVisible == false`. DevReload Manager and Toolspace still pop visible (their `Show()` is unconditional), which is harmless. The CPU/license footprint is the same as a normal launch; the only externally observable difference is `MainWindowHandle == 0`.
+
+```powershell
+$args = '/ld "C:\Program Files\Autodesk\AutoCAD 2025\AecBase.dbx" /p "<<C3D_Metric>>" /product C3D /language en-US /Automation'
+Start-Process "C:\Program Files\Autodesk\AutoCAD 2025\acad.exe" -ArgumentList $args
+```
+
+**Hard constraint: Civil 3D licensing is one instance per Windows session.** Launching `/Automation` while the user has a visible Civil 3D open will silently block on a license-conflict popup the agent can't see. Always check `Get-Process acad` first and kill any prior agent-launched instance before spawning a new one. Do NOT kill the user's instance — match by start-time or window-title to discriminate.
+</step-1-launch-with-automation>
+
+<step-2-devreload-auto-load>
+ACD-MCP's `loadOnStartup: false` in `%APPDATA%\DevReload\plugins.json` is the production default — the user clicks "Load" in DevReload Manager when they want it. For unattended agent use, flip the flag:
+
+```jsonc
+{
+  "name": "Acd.Mcp",
+  "dllPath": "X:\\GitHub\\shtirlitsDva\\ACD-MCP\\src\\Acd.Mcp\\bin\\Debug\\Acd.Mcp.dll",
+  "loadOnStartup": true,   // ← only change
+  ...
+}
+```
+
+The agent must restore `false` when the session ends — otherwise the user's next normal launch starts with the plugin already loaded, which is a behaviour change they didn't ask for. Wrap the flip in a try/finally around the verification.
+</step-2-devreload-auto-load>
+
+<step-3-listener-auto-start>
+Even after `Initialize()` runs cleanly, the named pipe is NOT open — `ACDMCP_START` is a separate `[CommandMethod]` the user normally types. There's no way to type a command into a hidden `/Automation` Civil 3D (no visible CLI control, UIA can't reach it). Three options, in order of how clean they are:
+
+1. **`Application.Idle` hook in `Initialize()` (DEBUG-only).** Subscribe once, fire `Start()`, unsubscribe:
+   ```csharp
+   #if DEBUG
+       Application.Idle += AutoStartOnceOnIdle;
+   #endif
+   private static void AutoStartOnceOnIdle(object? s, EventArgs e) {
+       Application.Idle -= AutoStartOnceOnIdle;
+       SafeBoundary.Run("auto-start", () => Start());
+   }
+   ```
+   `Idle` fires once AutoCAD's command loop is ready — the right barrier for "now it's safe to open the pipe". This is what worked in the v18 verification. Production builds (`#if !DEBUG`) keep the user-controlled behaviour.
+
+2. **COM `SendCommand` via ROT.** Theoretically the journal-documented path. In practice, Civil 3D 2025 launched with `/Automation` against an unsaved `Drawing1.dwg` does NOT register in the ROT — verified empirically by enumerating monikers, no `AutoCAD.*` entries. The ROT moniker uses the drawing's full path; an unsaved drawing has no path, so no moniker. Workaround would be to pass a saved `.dwg` on the command line, but that's friction.
+
+3. **Win32 `SendMessage` to the AutoCAD CLI HWND.** Doesn't work: the CLI is a WPF `AutoCompleteEdit_1` control with no native HWND that accepts `WM_CHAR`.
+
+Option 1 is what to use. Tagged TEMPORARY in v18's code so it's obvious during reviews; revert before merging to main.
+</step-3-listener-auto-start>
+
+<step-4-pipe-readiness-detection>
+After step 3 fires, the pipe exists at `\\.\pipe\acd-mcp-<PID>`. The intuitive readiness check fails:
+
+```powershell
+Test-Path "\\.\pipe\acd-mcp-$pid"   # returns False even when the pipe is open
+```
+
+`Test-Path` doesn't actually open the named-pipe handle; it returns false for valid-but-unconnected pipes. The reliable check enumerates the pipe filesystem directly:
+
+```powershell
+[System.IO.Directory]::GetFiles("\\.\\pipe\\") | Where-Object { $_ -match "acd-mcp-$pid" }
+```
+
+Wasted 90 s of monitor time in the v18 session on `Test-Path` before switching.
+</step-4-pipe-readiness-detection>
+
+<repl-alc-typeof-trap>
+Once the pipe is up, the REPL can be driven via `autocad_execute_csharp`. **But:** the script submission lives in Roslyn's non-collectible in-memory ALC, while the plugin's own types (`Acd.Mcp.McpPlugin`, `Acd.Mcp.Batch.BatchExecutor`, ...) live in DevReload's collectible isolated ALC. The CLR forbids non-collectible → collectible references, so this fails:
+
+```csharp
+typeof(Acd.Mcp.McpPlugin).GetField(...)
+// → FileNotFoundException: Could not load file or assembly 'Acd.Mcp, Version=...'
+```
+
+The workaround: reach plugin-internal types via `Assembly.GetType("FullName")` against an `AppDomain.CurrentDomain.GetAssemblies()` entry. The assembly object IS visible across ALCs; only static type references in the script's IL are forbidden.
+
+```csharp
+var asm = AppDomain.CurrentDomain.GetAssemblies().First(a => a.GetName().Name == "Acd.Mcp");
+var pluginT = asm.GetType("Acd.Mcp.McpPlugin");          // ← reflection, not typeof
+var bf = BindingFlags.NonPublic | BindingFlags.Static;
+var version = pluginT.GetField("Version", bf).GetValue(null);
+```
+
+This is exactly the same rule G6 fought at the structural level for batch script bodies; the REPL hits it any time you `typeof()` a type the script's compile-side reference list does NOT promote into the default ALC. Treat it as "anything in `Acd.Mcp.dll` or `Acd.Mcp.Batch.dll` is reflection-only from the REPL".
+</repl-alc-typeof-trap>
+
+</autonomous-bootstrap>
+
+<qa-standardization>
+What this session proved: **a Civil 3D BATCH/REPL regression test can run end-to-end with no human at the keyboard.** The v18 verification went from "no Civil 3D running" to "5/5 Pass against five real DWGs" in under three minutes, with a single failure mode (license conflict if the user is already in Civil 3D). That's a CI-shaped problem.
+
+The path from "I did it by hand in an agentic loop" to "every PR auto-runs" is mostly removing manual judgement. The pieces:
+
+<what-the-harness-needs>
+A QA harness for ACD-MCP should:
+1. Detect / kill prior agent-launched Civil 3D processes (NOT the user's).
+2. Launch Civil 3D with the documented `/Automation` arg set.
+3. Flip `loadOnStartup` true in DevReload's `plugins.json` (and restore on tear-down).
+4. Wait for `Initialize: v<NN>` AND `EnsureDtoGraph: Registered <N>` (with `N > 0`) in `%LOCALAPPDATA%\Acd.Mcp\log.txt` — NOT just the first; both gate the test.
+5. Wait for the named pipe via `Directory.GetFiles("\\\\.\\pipe\\")` (not `Test-Path`).
+6. Drive REPL + BATCH via the reflection harness in `<the-static-field-handle>` / `<driving-the-batch-palette>`.
+7. Compare per-file `BatchRunReport.Results` against expected step outcomes for a fixed set of fixture DWGs (e.g. `tests/Acd.Mcp.IntegrationTests/fixtures/*.dwg`).
+8. Tear down: kill Civil 3D, restore `loadOnStartup`, restore any palette state mutations.
+</what-the-harness-needs>
+
+<key-obstacles>
+- **License singleton.** Civil 3D refuses two instances per Windows user session. A CI runner needs a dedicated session per concurrent test — easy on a Windows runner farm, awkward on a developer laptop running the suite locally.
+- **Startup latency.** Civil 3D 2025 cold-start to "plugin ready" is ~60–90 s. Tests cluster well — once the pipe is up, a hundred BATCH runs cost ~14 ms each (see `<measurement-harness>`). Test runs should batch many assertions per launch, not launch per test.
+- **DevReload coupling.** The agent harness assumes DevReload is installed and configured. A production-shape harness should not need DevReload — it should NETLOAD `Acd.Mcp.dll` directly. That's a separate piece of work: an `AcdMcp.IntegrationHost` exe that uses `accoreconsole.exe` or COM to NETLOAD without DevReload. Worth doing once; would also serve as the user's "special test app" sketched at the start of this session.
+- **Bin-folder config.** `SharedAssemblies.Config.json` lives in `bin/` (gitignored), but the streamed-assembly list is now load-bearing for G6. Either a tracked template + post-build copy (see G8 in `CRASH_TEST_V2_JOURNAL.md`), or the integration host writes the file itself before launch.
+- **Reflection-API stability.** Half the harness pokes private fields by name (`_batchRpc`, `_uiState`, `_batchExecutor`). A rename refactor silently breaks every test. Two ways to harden: (a) annotate the harness-reachable fields with a `[HarnessSurface]` attribute and add a smoke test that asserts they exist, or (b) expose the same verbs through MCP tools so the harness can call typed MCP RPCs instead of reflecting. Option (b) is the right shape long-term — see the unfinished `autocad_batch_run_test` / `batch_run_live` action item.
+</key-obstacles>
+
+<recommended-shape>
+A minimum-viable QA harness, in three layers:
+
+1. **`AcdMcp.IntegrationHost`** (new exe, ~200 LOC). Handles steps 1–5 of `<what-the-harness-needs>`: process management, log-tail wait, pipe-readiness detection, COM bind (or pipe client) once the pipe is up. Knows nothing about test cases.
+
+2. **`AcdMcp.IntegrationTests`** (new xUnit project). One `IClassFixture` constructs the host, drives the BATCH palette + REPL, asserts on `BatchRunReport`. Tests look like ordinary `[Fact]` methods. Fixtures (.dwg files) live next to the test code, gitignored or LFS-tracked depending on size.
+
+3. **CI wiring.** Self-hosted Windows runner with Civil 3D 2025 installed and a non-interactive license entitlement. GitHub Actions job: `dotnet test AcdMcp.IntegrationTests` with `[Trait("Category", "RequiresCivil3D")]` so PRs that change only non-AutoCAD code can skip it.
+
+**Cost estimate from this session's data:**
+- One full launch + verification cycle = 90–120 s (90 s cold-start + ~30 s for a dozen BATCH runs).
+- Marginal cost of additional assertions inside one launch = ~15 ms each.
+- 100 assertions across one launch ≈ 92 s wall-clock. Cheaper than a typical e2e browser test.
+
+**What's NOT in scope for the first cut:** Live-mode runs (those touch real files, need disposable fixtures), `ACDMCP_PALETTE` interactive flows, anything that depends on the user clicking. The reflection harness handles every code path that matters for testing batch scripts and the REPL.
+
+Once this exists, the `CRASH_TEST_*.md` journal pattern this repo has been using becomes redundant: the journal exists to record manual end-to-end verifications agents do by hand. With an automated harness, the journal collapses to "I added these test cases; they pass."
+</recommended-shape>
+
+</qa-standardization>
 
 </computer-use-from-claude-code>
