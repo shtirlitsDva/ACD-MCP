@@ -184,9 +184,7 @@ DevReload hot-swaps the plugin's isolated ALC. The procedure for an iteration lo
 4. **Trigger DevReload's reload via the per-plugin commands.** DevReload registers `<commandPrefix>UNLOAD` and `<commandPrefix>LOAD` for every plugin in `%APPDATA%\DevReload\plugins.json`. For ACD-MCP (`commandPrefix: ACDMCP`), that's `ACDMCPUNLOAD` then `ACDMCPLOAD`. The unload tears down the collectible ALC; the load streams the fresh bytes back in. **Caveat from this session:** even after `ACDMCPUNLOAD`, AutoCAD held a `FileShare.Read` lock on `Acd.Mcp.dll` long enough to fail an immediate `dotnet build`. Workarounds: `mv Acd.Mcp.dll Acd.Mcp.dll.old; dotnet build` (let the new build write a fresh file), or kill AutoCAD entirely if the loop is short.
 5. **Re-run `ACDMCP_START`** to wake the pipe listener. First call after a fresh ALC takes a few seconds (Roslyn warm-up, DTO graph rebuild).
 6. **Re-run `ACDMCP_PALETTE`** to bring the palette back. Only needed if the user wants visual confirmation; AFK testing can skip this and drive `_batchRpc._uiState` directly once `_batchExecutor` is non-null.
-
-**Important caveat (per @mgo):** `Acd.Mcp.Api.dll` lives in the Default ALC and **does NOT hot-reload**. Any change to types in that assembly requires a full Civil 3D restart. Stick to `Acd.Mcp.dll` / `Acd.Mcp.Batch.dll` for the agentic loop. If a fix forces a change in `Acd.Mcp.Api.dll`, finish the loop in the next session.
-
+    
 **Verifying the reload landed:** after `ACDMCP_START`, run `Doc.Name` via REPL — if it succeeds, the new pipe is up. To confirm the new code is the one running, check `Acd.Mcp.McpPlugin.Version` (bump the version string before reloading so old vs new is visually obvious).
 </reload-the-plugin-procedure>
 
@@ -237,8 +235,6 @@ Adding `/Automation` runs Civil 3D as a **hidden, out-of-process COM server**: t
 $args = '/ld "C:\Program Files\Autodesk\AutoCAD 2025\AecBase.dbx" /p "<<C3D_Metric>>" /product C3D /language en-US /Automation'
 Start-Process "C:\Program Files\Autodesk\AutoCAD 2025\acad.exe" -ArgumentList $args
 ```
-
-**Hard constraint: Civil 3D licensing is one instance per Windows session.** Launching `/Automation` while the user has a visible Civil 3D open will silently block on a license-conflict popup the agent can't see. Always check `Get-Process acad` first and kill any prior agent-launched instance before spawning a new one. Do NOT kill the user's instance — match by start-time or window-title to discriminate.
 </step-1-launch-with-automation>
 
 <step-2-devreload-auto-load>
