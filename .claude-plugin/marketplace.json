@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "acd-mcp",
-      "source": "./",
+      "source": "./plugins/acd-mcp",
       "description": "Live C# REPL plus multi-file batch runner inside a running AutoCAD 2025+ process.",
       "repository": "https://github.com/shtirlitsDva/ACD-MCP",
       "keywords": ["autocad", "civil-3d", "csharp", "repl", "batch", "automation"]

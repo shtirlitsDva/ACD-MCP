@@ -1,6 +1,6 @@
 {
   "name": "acd-mcp",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Live C# script session plus multi-file batch runner inside a running AutoCAD 2025+ process. Drives a persistent CSharpScript session on AutoCAD's main thread, with DTO-driven JSON serialization for tidy LLM replies.",
   "author": {
     "name": "Damgaard RI"
@@ -18,5 +18,5 @@
     "drawing"
   ],
   "skills": "./skills",
-  "mcpServers": "./.codex-plugin/mcp.json"
+  "mcpServers": "./codex.mcp.json"
 }

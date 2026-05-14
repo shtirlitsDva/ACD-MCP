@@ -1,13 +1,15 @@
 {
   "name": "acd-mcp",
-  "description": "ACD-MCP — C# REPL and batch runner inside AutoCAD 2025+.",
-  "owner": {
-    "name": "Damgaard RI"
+  "interface": {
+    "displayName": "ACD-MCP",
+    "shortDescription": "C# REPL and batch runner inside AutoCAD 2025+."
   },
   "plugins": [
     {
       "name": "acd-mcp",
-      "source": "./",
+      "source": { "source": "local", "path": "./plugins/acd-mcp" },
+      "policy": { "installation": "AVAILABLE" },
+      "category": "Coding",
       "description": "Live C# REPL plus multi-file batch runner inside a running AutoCAD 2025+ process.",
       "repository": "https://github.com/shtirlitsDva/ACD-MCP",
       "keywords": ["autocad", "civil-3d", "csharp", "repl", "batch", "automation"]

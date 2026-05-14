@@ -11,19 +11,18 @@
   "release" job invokes this script on tag push.
 
   What it does:
-    1. dotnet publish Acd.Mcp.Bridge → bin/ at repo root (THE committed
+    1. dotnet publish Acd.Mcp.Bridge → plugins/acd-mcp/bin/ (THE committed
        binaries — Claude Code's /plugin install launches Bridge from here
-       via .mcp.json's ${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe).
+       via .mcp.json's ${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe; Codex's
+       /plugin install uses codex.mcp.json's ./bin/Acd.Mcp.Bridge.exe).
     2. dotnet build  Acd.Mcp.sln    → Acd.Mcp.dll + transitive deps
-    3. Assemble Deploy/acd-mcp-plugin/ with the full plugin layout:
-         .claude-plugin/, skills/, .mcp.json, install-hooks/,
-         bin/ (Bridge.exe), autocad-bundle/ACD-MCP.bundle/Contents/
-         (Acd.Mcp.dll + deps)
+    3. Assemble Deploy/acd-mcp-plugin/ from the plugins/acd-mcp/ folder
+       + autocad-bundle/ACD-MCP.bundle/Contents/ (Acd.Mcp.dll + deps).
     4. Zip it to Deploy/acd-mcp-plugin-v<X.Y.Z>.zip
     5. (Optional) Create a GH Release and upload the zip with gh CLI.
 
   After running locally, REMEMBER TO:
-    git add bin/
+    git add plugins/acd-mcp/bin/
     git commit -m "Refresh Bridge binary for v<X.Y.Z>"
     git tag v<X.Y.Z>
     git push --tags
@@ -71,7 +70,7 @@ function Fail($msg)       { Write-Host "  ✗ $msg" -ForegroundColor Red; throw 
 # ─── version ────────────────────────────────────────────────────────────────
 
 if (-not $Version) {
-    $manifest = Get-Content '.claude-plugin/plugin.json' -Raw | ConvertFrom-Json
+    $manifest = Get-Content 'plugins/acd-mcp/.claude-plugin/plugin.json' -Raw | ConvertFrom-Json
     $Version  = $manifest.version
 }
 if (-not $Version) { Fail "Could not determine version (no -Version, no plugin.json 'version' field)." }
@@ -88,14 +87,16 @@ New-Item -ItemType Directory -Path $pluginStage -Force | Out-Null
 
 # ─── build ──────────────────────────────────────────────────────────────────
 
-$repoBinDir = Join-Path $repoRoot 'bin'
+$pluginRoot = Join-Path $repoRoot 'plugins/acd-mcp'
+$repoBinDir = Join-Path $pluginRoot 'bin'
 
 if (-not $SkipBuild) {
-    Write-Step "dotnet publish Acd.Mcp.Bridge → bin/"
-    # Publish directly into the committed bin/ at repo root. This is the
-    # SAME bin/ that Claude Code's /plugin install reads (per .mcp.json's
-    # ${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe), so refreshing it here
-    # keeps the marketplace install and the GitHub Release zip in lockstep.
+    Write-Step "dotnet publish Acd.Mcp.Bridge → plugins/acd-mcp/bin/"
+    # Publish directly into the committed plugins/acd-mcp/bin/. This is the
+    # SAME bin/ that BOTH Claude Code and Codex /plugin install read (per
+    # .mcp.json's ${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe and
+    # codex.mcp.json's ./bin/Acd.Mcp.Bridge.exe), so refreshing it here
+    # keeps marketplace installs and the GitHub Release zip in lockstep.
     # Wipe-then-publish so removed transitive deps from a prior build don't
     # linger.
     if (Test-Path $repoBinDir) {
@@ -123,19 +124,12 @@ if (-not $SkipBuild) {
 
 Write-Step "Assembling plugin layout at $pluginStage"
 
-# 1. Manifest + plugin-level configs (everything Claude Code reads directly).
-Copy-Item '.claude-plugin'  (Join-Path $pluginStage '.claude-plugin')  -Recurse
-Copy-Item '.mcp.json'       $pluginStage
-Copy-Item 'skills'          (Join-Path $pluginStage 'skills')          -Recurse
-Copy-Item 'install-hooks'   (Join-Path $pluginStage 'install-hooks')   -Recurse
-Copy-Item 'README.md'       $pluginStage
-Write-Ok "Plugin metadata copied"
-
-# 2. Bridge.exe + its publish deps → bin/ (copied from the canonical repo-root bin/)
-$pluginBin = Join-Path $pluginStage 'bin'
-New-Item -ItemType Directory -Path $pluginBin -Force | Out-Null
-Copy-Item (Join-Path $repoBinDir '*') $pluginBin -Recurse
-Write-Ok "Bridge.exe staged"
+# 1. Everything inside plugins/acd-mcp/ IS the plugin. Mirror it into the
+#    zip stage root. That covers .claude-plugin/, .codex-plugin/, .mcp.json,
+#    codex.mcp.json, skills/, install-hooks/, and bin/.
+Copy-Item (Join-Path $pluginRoot '*') $pluginStage -Recurse
+Copy-Item 'README.md' $pluginStage
+Write-Ok "Plugin metadata + Bridge.exe staged"
 
 # 3. AutoCAD bundle: copy structure + populate Contents/ from plugin bin.
 $pluginBundleSrc = 'autocad-bundle/ACD-MCP.bundle'
@@ -193,10 +187,10 @@ Write-Host ""
 # Nudge the maintainer if bin/ drifted from git. Without a refresh-and-commit,
 # Claude Code's /plugin install would pull stale Bridge binaries from master.
 if (Get-Command git -ErrorAction SilentlyContinue) {
-    $dirtyBin = git status --porcelain -- bin 2>$null
+    $dirtyBin = git status --porcelain -- plugins/acd-mcp/bin 2>$null
     if ($dirtyBin) {
-        Write-Host "  ! bin/ has uncommitted changes — commit them so /plugin install picks up the refresh:" -ForegroundColor Yellow
-        Write-Host "    git add bin/"
+        Write-Host "  ! plugins/acd-mcp/bin/ has uncommitted changes — commit them so /plugin install picks up the refresh:" -ForegroundColor Yellow
+        Write-Host "    git add plugins/acd-mcp/bin/"
         Write-Host "    git commit -m `"Refresh Bridge binary for v$Version`""
         Write-Host "    git tag v$Version && git push --tags"
         Write-Host ""

@@ -116,7 +116,7 @@ Two commands. Then a single PowerShell script for the AutoCAD side.
 
    That registers `Bridge.exe` in Claude Code's MCP roster automatically (via the plugin's `.mcp.json`) and surfaces four skills: `/acd-mcp:start`, `/acd-mcp:script`, `/acd-mcp:batch`, `/acd-mcp:add-dto`.
 
-   > `Bridge.exe` and its .NET 8 dependencies are committed to `bin/` at the repo root. Claude Code's marketplace install only fetches what's in git, so the binary lives there. `scripts/Build-Release.ps1` refreshes `bin/` and reminds the maintainer to commit. Users get it just by `/plugin install` — no separate download.
+   > `Bridge.exe` and its .NET 8 dependencies are committed to `plugins/acd-mcp/bin/`. Claude Code's marketplace install only fetches what's in git, so the binary lives there. `scripts/Build-Release.ps1` refreshes it and reminds the maintainer to commit. Users get it just by `/plugin install` — no separate download.
 
 2. **Deploy the AutoCAD bundle.** The Claude plugin host cannot write into `%APPDATA%\Autodesk\`, so this step is separate. Run once:
 
@@ -140,9 +140,9 @@ Two clicks in the Codex app's Plugins panel. Then a single PowerShell script for
    * Paste: `shtirlitsDva/ACD-MCP` and confirm.
    * From the plugin list, install **acd-mcp**.
 
-   That registers `Bridge.exe` in Codex's MCP roster automatically (via the plugin's `.codex-plugin/mcp.json`) and surfaces the same four skills as Claude Code (`start`, `script`, `batch`, `add-dto`).
+   That registers `Bridge.exe` in Codex's MCP roster automatically (via the plugin's `codex.mcp.json`) and surfaces the same four skills as Claude Code (`start`, `script`, `batch`, `add-dto`).
 
-   > `Bridge.exe` and its .NET 8 dependencies are committed to `bin/` at the repo root — the Codex plugin install fetches them along with the manifest, same as the Claude Code path.
+   > Plugin contents (Bridge + skills + bundle install script) live under `plugins/acd-mcp/` in the repo — shared with the Claude Code install, no duplication.
 
 2. **Deploy the AutoCAD bundle.** The Codex plugin host cannot write into `%APPDATA%\Autodesk\`, so this step is separate. Run once:
 
