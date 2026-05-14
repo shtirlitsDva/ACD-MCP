@@ -307,6 +307,20 @@ Even after `Initialize()` runs cleanly, the named pipe is NOT open — `ACDMCP_S
 
 2. **COM `SendCommand` via ROT.** Theoretically the journal-documented path. In practice, Civil 3D 2025 launched with `/Automation` against an unsaved `Drawing1.dwg` does NOT register in the ROT — verified empirically by enumerating monikers, no `AutoCAD.*` entries. The ROT moniker uses the drawing's full path; an unsaved drawing has no path, so no moniker. Workaround would be to pass a saved `.dwg` on the command line, but that's friction.
 
+   **CORRECTION (2026-05-14, verified against pid 51832 Civil 3D 2025 on the DevReload-impl machine):** the "no `AutoCAD.*` entries in ROT" finding above was **a moniker-name search-string bug, not an empirical truth about the ROT**. A normal (non-`/Automation`) Civil 3D launch registers in the ROT immediately, even with no drawing open — but under its **CLSID** `!{363E5B47-885D-44C3-89EB-A2AB2129B57E}`, NOT under a `AutoCAD.Application`-style display name. Code that searches the ROT for the ProgID string `"AutoCAD.Application"` will find nothing; code that searches for the CLSID-in-braces substring finds the entry on the first try.
+   
+   Reach via:
+   ```csharp
+   [DllImport("ole32.dll")]  static extern int CLSIDFromProgID(string progId, out Guid clsid);
+   [DllImport("oleaut32.dll")] static extern int GetActiveObject(ref Guid rclsid, IntPtr res, [MarshalAs(UnmanagedType.IUnknown)] out object? ppunk);
+   CLSIDFromProgID("AutoCAD.Application", out var clsid);
+   GetActiveObject(ref clsid, IntPtr.Zero, out var app);
+   ```
+   
+   Returns a fully functional COM `AcadApplication` with `IsQuiescent`, `HWND`, `Name`, `Version`, `GetAcadState()` etc. all reachable. `ActiveDocument` still throws when no document is loaded — that part of the original write-up is correct — but `Documents.Add()` / `Documents.Open()` work because they're on the (always-available) `Documents` collection.
+   
+   Whether the `/Automation` flag changes this behaviour was NOT re-verified in the correction; the original empirical observation may still hold for `/Automation` specifically. For normal agentic-dev launches (visible AutoCAD, no `/Automation`), use COM via the CLSID path. See `H:\GitHub\shtirlitsDva\DevReload-impl\docs\shared-understanding\agent-autocad-control.md` (`<rot-moniker-format>`) for the full evidence dump and the `AcadComClient` implementation that uses it.
+
 3. **Win32 `SendMessage` to the AutoCAD CLI HWND.** Doesn't work: the CLI is a WPF `AutoCompleteEdit_1` control with no native HWND that accepts `WM_CHAR`.
 
 Option 1 is what to use. Tagged TEMPORARY in v18's code so it's obvious during reviews; revert before merging to main.
