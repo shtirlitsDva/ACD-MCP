@@ -37,7 +37,7 @@ jobs:
           # Invoke-ScriptAnalyzer's -Path is [String], not [String[]] — loop
           # rather than pass a comma-list (silent confusion otherwise).
           $issues = @()
-          foreach ($p in 'install-hooks','scripts') {
+          foreach ($p in 'plugins/acd-mcp/install-hooks','scripts') {
             $issues += Invoke-ScriptAnalyzer -Path $p -Recurse -Severity Warning,Error
           }
           $issues | Format-Table -AutoSize
