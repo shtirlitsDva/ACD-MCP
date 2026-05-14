@@ -30,8 +30,8 @@ namespace Acd.Mcp.Batch.Runtime
     {
         private readonly Database _db;
         private readonly Transaction _tx;
+        private readonly ResourceManager _resources;
         private bool _committed;
-        private bool _disposed;
 
         public string Path { get; }
         public Database Database => _db;
@@ -42,6 +42,17 @@ namespace Acd.Mcp.Batch.Runtime
             Path = path;
             _db = db;
             _tx = tx;
+
+            // ResourceManager disposes LIFO. Register Database FIRST so
+            // Transaction is disposed before Database — the Transaction is
+            // an inner resource of the Database and AutoCAD expects that
+            // order. Errors are isolated via SafeBoundary.Run, so a failing
+            // Transaction.Dispose does not block Database.Dispose, and
+            // neither failure is silently swallowed — both land in
+            // %LOCALAPPDATA%\Acd.Mcp\log.txt for the agent to see.
+            _resources = new ResourceManager(SafeBoundary.Run);
+            _resources.Register("AcadBatchSession.Database", _db);
+            _resources.Register("AcadBatchSession.Transaction", _tx);
         }
 
         public void CommitAndSave()
@@ -55,19 +66,9 @@ namespace Acd.Mcp.Batch.Runtime
             _committed = true;
         }
 
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-
-            // If not committed, we intentionally don't call Tx.Commit. The
-            // Database's Dispose aborts any pending transaction; we still
-            // dispose the Transaction explicitly first to be tidy.
-            //
-            // Both disposals are wrapped to never throw — a tear-down
-            // failure must not mask the body's outcome.
-            try { _tx.Dispose(); } catch { }
-            try { _db.Dispose(); } catch { }
-        }
+        // ResourceManager is itself idempotent and runs every step under
+        // SafeBoundary.Run; no need for a second `_disposed` guard or
+        // a try/catch wrapper here.
+        public void Dispose() => _resources.Dispose();
     }
 }

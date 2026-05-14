@@ -8,11 +8,18 @@ namespace Acd.Mcp.Batch.Runtime
     // wrapped in an AcadBatchSession. The runner never sees Database or
     // Transaction directly — they ride inside the session.
     //
-    // The 4-arg ReadDwgFile overload that takes FileShare is the one we
-    // want: it lets us pass FileShare.Read explicitly. Both Test and Live
-    // use FileShare.Read per the spec. The lease is a probe (held only
-    // momentarily); ReadDwgFile then opens the underlying file on its own
-    // terms with FileShare.Read.
+    // Share-mode choice (FileShare.ReadWrite) — see issue #1 for the full
+    // story. The short version: AutoCAD's Database holds the underlying OS
+    // file handle past `Dispose()` (handle release is finalizer-driven, not
+    // synchronous). The runner opens each file twice in Mode=Live — once
+    // for the Test phase and again for the Live phase — and the Test
+    // handle is typically still alive when the Live phase tries to SaveAs.
+    // A FileShare.Read open says "I share for read, NOT for write," which
+    // makes the OS refuse the Live SaveAs writer and surface eFilerError.
+    // FileShare.ReadWrite shares for both — the lingering handle no longer
+    // blocks our own SaveAs. Detection of foreign writers stays at the
+    // probe layer (DefaultFileAccessProbe), which is unaffected by our
+    // internal share mode.
     internal sealed class AcadDrawingHost : IDrawingHost<AcadBatchGlobals>
     {
         public IBatchSession Open(string path, FileLease lease)
@@ -21,10 +28,11 @@ namespace Acd.Mcp.Batch.Runtime
             // no document association. The standard side-loading shape.
             var db = new Database(buildDefaultDrawing: false, noDocument: true);
 
-            // FileShare.Read: hard requirement from the spec for both Test
-            // and Live. Any concurrent writer makes this throw (which is
-            // what we want — see the file-locked-aborts contract).
-            db.ReadDwgFile(path, FileShare.Read, allowCPConversion: false, password: "");
+            // FileShare.ReadWrite: lets a lingering handle from this
+            // batch's earlier Test phase coexist with our own future
+            // SaveAs. See the class-level comment for why FileShare.Read
+            // (the obvious choice on paper) breaks Mode=Live.
+            db.ReadDwgFile(path, FileShare.ReadWrite, allowCPConversion: false, password: "");
 
             var tx = db.TransactionManager.StartTransaction();
             return new AcadBatchSession(path, db, tx);
