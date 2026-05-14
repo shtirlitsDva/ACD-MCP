@@ -1,12 +1,13 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "acd-mcp",
   "version": "0.3.3",
   "description": "Live C# script session plus multi-file batch runner inside a running AutoCAD 2025+ process. Drives a persistent CSharpScript session on AutoCAD's main thread, with DTO-driven JSON serialization for tidy LLM replies.",
   "author": {
     "name": "Damgaard RI"
   },
+  "homepage": "https://github.com/shtirlitsDva/ACD-MCP",
   "repository": "https://github.com/shtirlitsDva/ACD-MCP",
+  "license": "TBD",
   "keywords": [
     "autocad",
     "civil-3d",
@@ -15,5 +16,7 @@
     "batch",
     "automation",
     "drawing"
-  ]
+  ],
+  "skills": "./skills",
+  "mcpServers": "./.codex-plugin/mcp.json"
 }

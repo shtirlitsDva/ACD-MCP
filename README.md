@@ -93,12 +93,13 @@ Pick the one that matches your role:
 
 ## Install
 
-Two install paths — pick the one that matches your client. Both always end with the same step: deploy the AutoCAD bundle.
+Three install paths — pick the one that matches your client. All end with the same step: deploy the AutoCAD bundle.
 
-| Your MCP client                         | Path                                                                |
-|-----------------------------------------|---------------------------------------------------------------------|
-| **Claude Code**                         | [Path A — Claude Code](#path-a--claude-code)                        |
-| **Codex / GitHub Copilot / Claude Desktop** | [Path B — Codex / Copilot / Claude Desktop](#path-b--codex--copilot--claude-desktop) |
+| Your MCP client                | Path                                                              |
+|--------------------------------|-------------------------------------------------------------------|
+| **Claude Code**                | [Path A — Claude Code](#path-a--claude-code)                      |
+| **Codex (app)**                | [Path B — Codex app](#path-b--codex-app)                          |
+| **GitHub Copilot / Claude Desktop** | [Path C — Copilot / Claude Desktop](#path-c--copilot--claude-desktop) |
 
 > **`Acd.Mcp.Bridge.exe` needs the .NET 8 Runtime** on the user's machine (see [Requirements](#requirements)). The Bridge exits with `framework not found` if it's missing. AutoCAD's bundled .NET runtime is not enough — Bridge runs out-of-process.
 
@@ -129,7 +130,33 @@ Two commands. Then a single PowerShell script for the AutoCAD side.
 
 > Do **not** run `Install-Mcp.ps1` — it would double-register `acd-mcp` in Claude Code's roster.
 
-### Path B — Codex / Copilot / Claude Desktop
+### Path B — Codex app
+
+Two clicks in the Codex app's Plugins panel. Then a single PowerShell script for the AutoCAD side.
+
+1. **Add the marketplace and install the plugin** inside the Codex app:
+
+   * Open **Settings → Plugins → Add marketplace**.
+   * Paste: `shtirlitsDva/ACD-MCP` and confirm.
+   * From the plugin list, install **acd-mcp**.
+
+   That registers `Bridge.exe` in Codex's MCP roster automatically (via the plugin's `.codex-plugin/mcp.json`) and surfaces the same four skills as Claude Code (`start`, `script`, `batch`, `add-dto`).
+
+   > `Bridge.exe` and its .NET 8 dependencies are committed to `bin/` at the repo root — the Codex plugin install fetches them along with the manifest, same as the Claude Code path.
+
+2. **Deploy the AutoCAD bundle.** The Codex plugin host cannot write into `%APPDATA%\Autodesk\`, so this step is separate. Run once:
+
+   ```powershell
+   pwsh "$env:USERPROFILE\.codex\plugins\cache\acd-mcp\acd-mcp\*\install-hooks\Install-Bundle.ps1"
+   ```
+
+   Copies `ACD-MCP.bundle` into `%APPDATA%\Autodesk\ApplicationPlugins\` (refuses if AutoCAD is running — close it first, or pass `-Force`).
+
+3. Continue with [Inside AutoCAD](#inside-autocad).
+
+> Do **not** run `Install-Mcp.ps1` — it would double-register `acd-mcp` in Codex's roster.
+
+### Path C — Copilot / Claude Desktop
 
 Two independent scripts from the extracted release zip.
 
@@ -180,10 +207,11 @@ Mirror of install:
 | Your install path     | Removal                                                              |
 |-----------------------|----------------------------------------------------------------------|
 | Path A — Claude Code  | `/plugin uninstall acd-mcp@acd-mcp` + `Uninstall-Bundle.ps1`         |
-| Path B — others       | `Uninstall-Mcp.ps1` + `Uninstall-Bundle.ps1`                         |
+| Path B — Codex app    | uninstall from Codex's Plugins panel + `Uninstall-Bundle.ps1`        |
+| Path C — others       | `Uninstall-Mcp.ps1` + `Uninstall-Bundle.ps1`                         |
 
 ```powershell
-pwsh install-hooks\Uninstall-Mcp.ps1             # deregister from Codex/Copilot/Claude Desktop (Path B only)
+pwsh install-hooks\Uninstall-Mcp.ps1             # deregister from Copilot / Claude Desktop (Path C only)
 pwsh install-hooks\Uninstall-Bundle.ps1          # remove the AutoCAD bundle
 pwsh install-hooks\Uninstall-Bundle.ps1 -Purge   # also delete DTOs, saved scripts, batch-run history, log
 ```

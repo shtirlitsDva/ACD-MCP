@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "acd-mcp": {
+      "command": "./bin/Acd.Mcp.Bridge.exe"
+    }
+  }
+}
