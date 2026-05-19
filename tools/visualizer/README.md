@@ -11,7 +11,7 @@ screenshot per query.
 - `visualize.html` — single-file viewer. No build, no dependencies. Open it in
   a browser (use a local web server because Chrome blocks `fetch('./...')` on
   `file://`).
-- `dump_modelspace.csx` — REPL snippet. Paste into `autocad_execute_csharp`;
+- `dump_modelspace.csx` — REPL snippet. Paste into `autocad_script_execute`;
   it produces the JSON shape the viewer reads.
 - `example.json` — a dump from a real Civil 3D sewage drawing for sanity-check.
 - `sample_render.png` — what the example renders to.

@@ -3,7 +3,7 @@
   "name": "acd-mcp",
   "description": "ACD-MCP — C# REPL and batch runner inside AutoCAD 2025+.",
   "owner": {
-    "name": "Damgaard RI"
+    "name": "Norsyn"
   },
   "plugins": [
     {

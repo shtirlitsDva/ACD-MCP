@@ -76,6 +76,17 @@ namespace Acd.Mcp.Bridge.Tools
                     error_message: ex.Message,
                     saved_as: null, name: null, replaced_dirty: null);
             }
+            catch (AcadTransportException ex)
+            {
+                // Bridge couldn't reach the plugin (AutoCAD not running,
+                // pipe down, retries exhausted). Surface the structured
+                // ErrorCode so the agent's skill can branch on it.
+                return new ProposeScriptResult(
+                    ok: false,
+                    error_code: ex.ErrorCode,
+                    error_message: ex.Message,
+                    saved_as: null, name: null, replaced_dirty: null);
+            }
         }
     }
 }

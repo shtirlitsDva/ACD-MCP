@@ -196,9 +196,9 @@ Two independent scripts from the extracted release zip.
 
 Common to both paths. After the bundle is in place:
 
-1. Launch AutoCAD 2025+. The bundle autoloads.
-2. Run `ACDMCP_START` to open the named pipe.
-3. (Optional) Run `ACDMCP_PALETTE` for the dockable SCRIPT + BATCH palette.
+1. Launch AutoCAD 2025+. The bundle autoloads and **auto-starts the named pipe** on first idle — the agent can call in immediately.
+2. (Optional) Run `ACDMCP_PALETTE` for the dockable SCRIPT + BATCH palette. Agent propose-script calls auto-open it too, so this is only needed if you want to open it ahead of time.
+3. To disable auto-start, create `%LOCALAPPDATA%\Acd.Mcp\config.json` with `{ "auto_start": false }` and use `ACDMCP_START` manually.
 
 ### Uninstall
 
@@ -240,7 +240,7 @@ So `git tag v0.2.0 && git push --tags` is sufficient to cut a release — no man
 | `ACDMCP_STOP` | Stop the listener. |
 | `ACDMCP_STATUS` | Report listener state, PID, pipe name, session state. |
 | `ACDMCP_RESET` | Drop the script session — variables/usings declared so far are gone. |
-| `ACDMCP_PALETTE` | Open the dockable palette with two tabs — **SCRIPT** (AvalonEdit + C# highlighting + live execution log, shares the script session with the MCP so `var x = 5` typed in the palette is visible to the LLM's next `autocad_script_execute` call, and vice versa) and **BATCH** (folder + mask + file list + Test/Live slide-switch + Manage Scripts). Wiring the palette also activates the `batch.*` and `script.*` plugin RPC methods (`autocad_batch_*` / `autocad_script_propose` MCP tools require it). |
+| `ACDMCP_PALETTE` | Open the dockable palette with two tabs — **SCRIPT** (AvalonEdit + C# highlighting + live execution log, shares the script session with the MCP so `var x = 5` typed in the palette is visible to the LLM's next `autocad_script_execute` call, and vice versa) and **BATCH** (folder + mask + file list + Test/Live slide-switch + Manage Scripts). After the fragility-fix v2 the `script.*` and `batch.*` RPC handlers are always wired once the listener is up — propose-script calls auto-open the palette, so this command is only needed if you want to open the palette ahead of time. |
 
 ### Palette / WPF note
 

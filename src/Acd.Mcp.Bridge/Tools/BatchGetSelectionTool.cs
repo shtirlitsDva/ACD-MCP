@@ -62,6 +62,14 @@ namespace Acd.Mcp.Bridge.Tools
                     error_message: ex.Message,
                     folder: null, mask: null, recurse: null, files: null, count: null);
             }
+            catch (AcadTransportException ex)
+            {
+                return new BatchSelectionResult(
+                    ok: false,
+                    error_code: ex.ErrorCode,
+                    error_message: ex.Message,
+                    folder: null, mask: null, recurse: null, files: null, count: null);
+            }
         }
     }
 

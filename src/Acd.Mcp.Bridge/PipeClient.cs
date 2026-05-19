@@ -7,40 +7,53 @@ namespace Acd.Mcp.Bridge
     // One-shot pipe client. Each call opens a fresh connection, sends a single
     // JSON-RPC request, reads one response, and closes. Slightly more I/O than a
     // persistent connection but simpler and resilient to plugin hot-reload —
-    // every call independently rediscovers the pipe.
+    // every call independently rediscovers the pipe and re-resolves the PID.
     //
-    // Internal: callers should use AcadClient, which exposes typed methods instead
-    // of the raw (method, params) shape.
+    // The retry policy lives one layer up in AcadClient so it can re-run
+    // PID resolution between attempts (the user typing ACDMCP_START
+    // mid-retry should be picked up automatically).
     internal sealed class PipeClient
     {
         private readonly int _autocadPid;
-        public string PipeName => $"acd-mcp-{_autocadPid}";
+        public string PipeName => PipeProber.PipeNameFor(_autocadPid);
 
         public PipeClient(int autocadPid)
         {
             _autocadPid = autocadPid;
         }
 
-        public async Task<JsonRpcResponse> SendAsync(
-            string method,
-            object? @params,
-            int connectTimeoutMs = 5000,
-            CancellationToken ct = default)
+        // Connect-only. Returns a stream the caller must dispose. Throws
+        // TimeoutException on connect deadline; AcadClient wraps that into
+        // AcadTransportException with Reason=PipeNotListening after the
+        // retry loop gives up.
+        public async Task<NamedPipeClientStream> ConnectAsync(int connectTimeoutMs, CancellationToken ct)
         {
-            await using var client = new NamedPipeClientStream(
+            var client = new NamedPipeClientStream(
                 ".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
 
             try
             {
                 await client.ConnectAsync(connectTimeoutMs, ct).ConfigureAwait(false);
+                return client;
             }
-            catch (TimeoutException)
+            catch
             {
-                throw new IOException(
-                    $"Could not connect to AutoCAD pipe '{PipeName}'. Is the Acd.Mcp listener running? " +
-                    "(Run ACDMCP_START inside AutoCAD.)");
+                await client.DisposeAsync().ConfigureAwait(false);
+                throw;
             }
+        }
 
+        // Sends one request on an already-connected stream. The caller
+        // owns the stream lifetime (open via ConnectAsync, dispose via
+        // `await using`). Splitting connect and send lets the retry loop
+        // distinguish "couldn't reach plugin" from "plugin replied with
+        // an error."
+        public async Task<JsonRpcResponse> SendOnAsync(
+            NamedPipeClientStream client,
+            string method,
+            object? @params,
+            CancellationToken ct)
+        {
             var request = new JsonRpcRequest
             {
                 Id = JsonSerializer.SerializeToElement(1),
@@ -53,7 +66,9 @@ namespace Acd.Mcp.Bridge
             await FrameIO.WriteFrameAsync(client, request, ct).ConfigureAwait(false);
             var response = await FrameIO.ReadFrameAsync<JsonRpcResponse>(client, ct).ConfigureAwait(false);
             if (response is null)
-                throw new IOException("Pipe closed before a response was received.");
+                throw new AcadTransportException(
+                    AcadTransportFailure.PipeBroken,
+                    "Pipe closed before a response was received.");
             return response;
         }
     }

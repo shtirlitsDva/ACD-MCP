@@ -44,17 +44,14 @@ namespace Acd.Mcp.Bridge.Tools
                 // Caller (e.g. MCP client shutting down) cancelled — let the SDK handle.
                 throw;
             }
-            catch (InvalidOperationException ex)
+            catch (AcadTransportException ex)
             {
-                // AutoCAD discovery: no instance, multiple instances, bad --pid.
-                return ExecuteResult.Runtime(ex.Message, 0);
-            }
-            catch (IOException ex)
-            {
-                // Pipe transport: not connected, broken mid-call, etc.
+                // Bridge couldn't reach the plugin (no AutoCAD, pipe down,
+                // retries exhausted). ExecuteResult has no dedicated
+                // error_code slot, so prepend the stable code to the
+                // runtime-error message — the agent's skill can parse it.
                 return ExecuteResult.Runtime(
-                    $"AutoCAD pipe unavailable: {ex.Message}. Is the listener running? " +
-                    "(ACDMCP_START inside AutoCAD.)",
+                    $"[{ex.ErrorCode}] {ex.Message}",
                     0);
             }
             catch (AcadRpcException ex)

@@ -9,7 +9,7 @@ The intent is to capture **how** so it survives this conversation and can be re-
 <the-core-trick>
 **Don't push pixels. Reflect into the plugin's own object graph.**
 
-The ACD-MCP plugin already exposes an in-process C# REPL via `autocad_execute_csharp`. The REPL runs on AutoCAD's main thread under `Doc.LockDocument()`. From inside that REPL, you can reach every singleton the plugin owns — palettes, view-models, executors, RPC handlers — via reflection through the plugin's static fields. Every `[RelayCommand]` method on those view-models is therefore a button the agent can press.
+The ACD-MCP plugin already exposes an in-process C# REPL via `autocad_script_execute`. The REPL runs on AutoCAD's main thread under `Doc.LockDocument()`. From inside that REPL, you can reach every singleton the plugin owns — palettes, view-models, executors, RPC handlers — via reflection through the plugin's static fields. Every `[RelayCommand]` method on those view-models is therefore a button the agent can press.
 
 This is not "computer use" in the Anthropic sense; it's better, because it's deterministic, sub-20 ms, and survives DPI / theme / ribbon-collapse changes.
 
@@ -257,7 +257,7 @@ For everything inside ACD-MCP's own UI, reflection from the REPL is faster, more
 </when-to-reach-for-an-mcp-server>
 
 <autonomous-bootstrap>
-The reflection harness above assumes the plugin is **already loaded and the pipe is up**. When the agent has to bring up a fresh Civil 3D from a cold machine — no user at the keyboard, no existing AutoCAD process — there is a four-step bootstrap chain. This section captures everything that worked in the v18 G6 verification (2026-05-13). Every step has a non-obvious gotcha; together they get from "no Civil 3D" to "agent has a live `autocad_execute_csharp` pipe" without a human in the loop.
+The reflection harness above assumes the plugin is **already loaded and the pipe is up**. When the agent has to bring up a fresh Civil 3D from a cold machine — no user at the keyboard, no existing AutoCAD process — there is a four-step bootstrap chain. This section captures everything that worked in the v18 G6 verification (2026-05-13). Every step has a non-obvious gotcha; together they get from "no Civil 3D" to "agent has a live `autocad_script_execute` pipe" without a human in the loop.
 
 <step-1-launch-with-automation>
 The standard Start-Menu shortcut for Civil 3D 2025 Metric expands to:
@@ -343,7 +343,7 @@ Wasted 90 s of monitor time in the v18 session on `Test-Path` before switching.
 </step-4-pipe-readiness-detection>
 
 <repl-alc-typeof-trap>
-Once the pipe is up, the REPL can be driven via `autocad_execute_csharp`. **But:** the script submission lives in Roslyn's non-collectible in-memory ALC, while the plugin's own types (`Acd.Mcp.McpPlugin`, `Acd.Mcp.Batch.BatchExecutor`, ...) live in DevReload's collectible isolated ALC. The CLR forbids non-collectible → collectible references, so this fails:
+Once the pipe is up, the REPL can be driven via `autocad_script_execute`. **But:** the script submission lives in Roslyn's non-collectible in-memory ALC, while the plugin's own types (`Acd.Mcp.McpPlugin`, `Acd.Mcp.Batch.BatchExecutor`, ...) live in DevReload's collectible isolated ALC. The CLR forbids non-collectible → collectible references, so this fails:
 
 ```csharp
 typeof(Acd.Mcp.McpPlugin).GetField(...)

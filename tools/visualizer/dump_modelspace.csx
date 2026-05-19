@@ -1,4 +1,4 @@
-// REPL snippet — paste into autocad_execute_csharp.
+// REPL snippet — paste into autocad_script_execute.
 // Produces a self-contained JSON describing every entity in model space
 // in a shape the SVG visualizer (visualize.html) understands.
 //

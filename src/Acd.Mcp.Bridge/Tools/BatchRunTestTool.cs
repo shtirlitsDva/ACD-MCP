@@ -72,6 +72,14 @@ namespace Acd.Mcp.Bridge.Tools
                     error_message: ex.Message,
                     run_id: null, pending: null, results_resource: null, note: null);
             }
+            catch (AcadTransportException ex)
+            {
+                return new BatchRunStartedResult(
+                    ok: false,
+                    error_code: ex.ErrorCode,
+                    error_message: ex.Message,
+                    run_id: null, pending: null, results_resource: null, note: null);
+            }
         }
     }
 

@@ -45,13 +45,14 @@ A guessed property name silently fails to compile or returns wrong data. If afte
 On first use in a session, sanity-check the surface:
 
 1. **Pipe up?** Call `autocad_script_execute("Doc.Name")`. Confirms the pipe is open and a drawing is loaded.
-   * Failure looks like `success: false` with `stderr` containing `"No AutoCAD instance found. ..."` or `"AutoCAD pipe unavailable: ..."`. The bridge couldn't connect to a plugin pipe.
-   * Resolution: the user has to run **`ACDMCP_START`** inside AutoCAD to open the pipe. (Release builds. DEBUG / DevReload builds auto-start the pipe on first idle after `Initialize` — see the v20 idle hook in `McpPlugin.cs`. No `ACDMCP_START` typing needed there.)
+   * The bridge auto-retries connect (200 / 800 / 2000 ms) so a brief AutoCAD restart window is invisible.
+   * Failure shape: `success: false` with `stderr` starting with a bracketed error_code, e.g. `[PIPE_NOT_LISTENING]`, `[NO_AUTOCAD_FOUND]`, `[AMBIGUOUS_AUTOCADS]`, `[MULTIPLE_AUTOCAD_PLUGINS]`. Read the code, then read the `acd-mcp://status` resource for the full snapshot.
+   * Resolution by code:
+     * `NO_AUTOCAD_FOUND` → user starts AutoCAD. Plugin auto-starts on first idle (Release builds too, as of fragility-fix v2). User can opt out via `%LOCALAPPDATA%\Acd.Mcp\config.json` `{ "auto_start": false }` and run `ACDMCP_START` manually.
+     * `PIPE_NOT_LISTENING` → wait a few seconds and retry once; the listener may still be coming up. If it persists, ask the user to run `ACDMCP_START`.
+     * `AMBIGUOUS_AUTOCADS` / `MULTIPLE_AUTOCAD_PLUGINS` → ask the user to disambiguate via the bridge's `--pid` flag in the MCP config.
 
-2. **Palette up?** (Required for BATCH and for `autocad_script_propose`.) Call `autocad_batch_get_selection()` (cheapest probe — no side effects). Inspect the **discriminated response shape**:
-   * `{ ok: true, folder, mask, files, ... }` — palette is open and routed.
-   * `{ ok: false, error_code: "-32603", error_message: "BATCH palette is not open. Run ACDMCP_PALETTE inside AutoCAD first." }` — user needs to run **`ACDMCP_PALETTE`** inside AutoCAD.
-   * The bridge never throws for this case (V2-G4): always read `result.ok` first, then `error_message` on failure. Same pattern for `autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_script_propose`. See the sibling skills' `<response-shape>` sections.
+2. **Palette up?** No longer a hard prerequisite — `autocad_script_propose` and `autocad_batch_propose_script` auto-open the palette on call (fragility-fix v2). The only handlers that still require an open palette are the BATCH selection readers (`autocad_batch_get_selection`, `autocad_batch_run_test` — both surface `error_code: "PALETTE_CLOSED"` when the palette is shut). The agent's response: ask the user to open the palette, set folder + mask, then retry. The bridge never throws for any of these cases (V2-G4): always read `result.ok` first, then `error_code` / `error_message` on failure.
 
 3. **AECC stack loaded?** If you'll touch entity metadata, probe:
    ```csharp

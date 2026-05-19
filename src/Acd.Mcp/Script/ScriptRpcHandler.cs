@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Acd.Mcp.Batch;
+using Acd.Mcp.Ui;
 
 namespace Acd.Mcp.Script
 {
@@ -25,8 +26,9 @@ namespace Acd.Mcp.Script
     internal sealed class ScriptRpcHandler
     {
         private readonly ScriptEditor _editor;
+        private readonly IPaletteHost _paletteHost;
 
-        public ScriptRpcHandler(ScriptEditor editor)
+        public ScriptRpcHandler(ScriptEditor editor, IPaletteHost paletteHost)
         {
             if (editor is null) throw new ArgumentNullException(nameof(editor));
             if (editor.Flavor != ScriptFlavor.Script)
@@ -34,6 +36,7 @@ namespace Acd.Mcp.Script
                     $"ScriptRpcHandler requires a ScriptEditor with Flavor=Script (got {editor.Flavor}).",
                     nameof(editor));
             _editor = editor;
+            _paletteHost = paletteHost;
         }
 
         public Task<object?> DispatchAsync(string method, JsonElement parameters, CancellationToken ct)
@@ -69,6 +72,13 @@ namespace Acd.Mcp.Script
                 _editor.IsDirty && !string.Equals(_editor.CurrentText, body, StringComparison.Ordinal);
 
             var saved = _editor.ProposeFromAgent(name, body, summary);
+
+            // Surface the staged proposal: open the palette if the user
+            // hasn't yet. ScriptViewModel checks PendingProposal on
+            // construction (Ui/ScriptViewModel.cs:120), so a late-opening
+            // palette picks up the staged proposal correctly.
+            _paletteHost.EnsureVisible();
+
             return new
             {
                 ok = true,

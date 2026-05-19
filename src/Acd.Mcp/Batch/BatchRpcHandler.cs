@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acd.Mcp.Batch;
 using Acd.Mcp.Pipe;
+using Acd.Mcp.Ui;
 
 namespace Acd.Mcp.Batch.Runtime
 {
@@ -31,13 +32,19 @@ namespace Acd.Mcp.Batch.Runtime
     internal sealed class BatchRpcHandler
     {
         private readonly BatchExecutor _executor;
-        private readonly IBatchUiState _uiState;
+        private readonly IPaletteHost _paletteHost;
 
-        public BatchRpcHandler(BatchExecutor executor, IBatchUiState uiState)
+        public BatchRpcHandler(BatchExecutor executor, IPaletteHost paletteHost)
         {
             _executor = executor;
-            _uiState = uiState;
+            _paletteHost = paletteHost;
         }
+
+        // Convenience accessor — every UI-state read is "if the palette
+        // is open, ask its VM, else return null." Returning null lets
+        // each handler decide its own failure shape (some throw a
+        // PALETTE_CLOSED error code, some can degrade gracefully).
+        private IBatchUiState? UiState => _paletteHost.CurrentBatchUiState;
 
         public async Task<object?> DispatchAsync(string method, JsonElement parameters, CancellationToken ct)
         {
@@ -78,6 +85,14 @@ namespace Acd.Mcp.Batch.Runtime
                 _executor.IsDirty && !string.Equals(_executor.CurrentScript, body, StringComparison.Ordinal);
 
             var saved = _executor.ProposeScript(name, body, summary);
+
+            // Surface the staged proposal: open the palette if the user
+            // hasn't yet. Marshalled to the main thread by the host.
+            // The BatchViewModel constructor seeds CurrentScript from
+            // the executor, so a late-opening palette picks up the
+            // already-staged body without losing the proposal.
+            _paletteHost.EnsureVisible();
+
             return new
             {
                 ok = true,
@@ -114,7 +129,12 @@ namespace Acd.Mcp.Batch.Runtime
                     "BATCH editor buffer is empty. Either pass a saved-script `name`, or call batch.proposeScript first.");
             }
 
-            var files = _uiState.CurrentSelection;
+            var uiState = UiState
+                ?? throw new InvalidOperationException(
+                    "BATCH palette is not open. Open it (ACDMCP_PALETTE) and set a folder + mask, " +
+                    "then call batch.runTest again.");
+
+            var files = uiState.CurrentSelection;
             if (files.Count == 0)
                 throw new InvalidOperationException(
                     "No files are currently selected in the BATCH palette. Set a folder + mask first.");
@@ -123,7 +143,7 @@ namespace Acd.Mcp.Batch.Runtime
             // before the worker task even starts). The agent polls
             // acd-mcp://batch-runs/<run_id> for THAT specific run, so a
             // concurrent UI Live run can't be mistaken for the agent's test.
-            var runId = _executor.StartTestRun(files, _uiState.OnFailure);
+            var runId = _executor.StartTestRun(files, uiState.OnFailure);
 
             return Task.FromResult<object>(new
             {
@@ -208,15 +228,19 @@ namespace Acd.Mcp.Batch.Runtime
 
         private object HandleGetSelection()
         {
-            var sel = _uiState.CurrentSelection;
+            var uiState = UiState
+                ?? throw new InvalidOperationException(
+                    "BATCH palette is not open. Open it (ACDMCP_PALETTE) to query the file selection.");
+
+            var sel = uiState.CurrentSelection;
             return new
             {
-                folder = _uiState.CurrentFolder,
-                mask = _uiState.CurrentMask,
-                recurse = _uiState.Recurse,
+                folder = uiState.CurrentFolder,
+                mask = uiState.CurrentMask,
+                recurse = uiState.Recurse,
                 files = sel,
                 count = sel.Count,
-                on_failure = _uiState.OnFailure.ToString(),
+                on_failure = uiState.OnFailure.ToString(),
             };
         }
 

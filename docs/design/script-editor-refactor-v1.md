@@ -2,6 +2,18 @@
 Script Editor refactor + REPL Manage Scripts + propose-to-REPL — Plan v1
 </title>
 
+<superseded-notice>
+**Partially superseded** by `lifecycle-and-discovery-v2.md` (2026-05-19).
+The palette-gating decision in this plan — the `_scriptRpc` /
+`_batchRpc` handlers being constructed only at ACDMCP_PALETTE — was
+the root cause of the post-restart fragility described in
+`docs/review/fragility-review-2026-05-18.md` (finding-1). The
+handlers are now always wired in `TryEnsureCore`; propose-script
+calls auto-open the palette via `IPaletteHost.EnsureVisible`. The
+rest of this plan (ScriptEditor extraction, Manage Scripts UX,
+mirror file layout) is still current.
+</superseded-notice>
+
 <motivation>
 Today the BATCH tab has a full "manage saved scripts" UX and an LLM-side
 `autocad_batch_propose_script` tool that pushes a script into the BATCH

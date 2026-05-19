@@ -35,7 +35,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v27-codex-cwd-fix";
+        private const string Version = "v28-fragility-fix-v2";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -43,7 +43,8 @@ namespace Acd.Mcp
         private static AcadExecutor? _executor;
         private static ExecutionLog? _log;
         private static PipeListener? _listener;
-        private static ScriptPaletteSet? _palette;
+        private static PaletteHost? _paletteHost;
+        private static StatusRpcHandler? _statusRpc;
         private static SynchronizationContext? _mainSync;
         private static BatchExecutor? _batchExecutor;
         private static BatchRpcHandler? _batchRpc;
@@ -146,35 +147,66 @@ namespace Acd.Mcp
                         throwOnError: false);
                 });
 
-#if DEBUG
-                // DEBUG-only auto-start: open the named pipe as soon as the
-                // command loop is idle. Lets agentic verification flows (and
-                // /Automation-launched Civil 3D, where no human can type
-                // ACDMCP_START) skip the manual start step.
-                //
-                // Production (Release) builds keep the existing
-                // user-controlled behaviour — listener is opened only when
-                // the user types ACDMCP_START / ACDMCP_PALETTE.
+                // Auto-start: open the named pipe as soon as the command
+                // loop is idle. Was DEBUG-only until fragility-fix v2 —
+                // promoted to RELEASE because requiring users to type
+                // ACDMCP_START after every AutoCAD launch was a silent
+                // tax with no benefit. Users who genuinely want the
+                // manual control can opt out via the config file (see
+                // ShouldAutoStart for the path + format).
                 //
                 // Hook removes itself on first fire. Terminate's
                 // ResourceManager also -= to cover the "plugin unloaded
                 // before Idle ever fired" case (Application.Idle is
                 // process-lifetime in the default ALC, so a leftover
                 // subscription would pin our collectible ALC).
-                _resources!.RegisterEvent("Application.Idle/AutoStart",
-                    subscribe: () => Application.Idle += AutoStartOnceOnIdle,
-                    unsubscribe: () => Application.Idle -= AutoStartOnceOnIdle);
-#endif
+                if (ShouldAutoStart())
+                {
+                    _resources!.RegisterEvent("Application.Idle/AutoStart",
+                        subscribe:   () => Application.Idle += AutoStartOnceOnIdle,
+                        unsubscribe: () => Application.Idle -= AutoStartOnceOnIdle);
+                }
             });
         }
 
-#if DEBUG
         private static void AutoStartOnceOnIdle(object? sender, EventArgs e)
         {
             Application.Idle -= AutoStartOnceOnIdle;
             SafeBoundary.Run("McpPlugin.AutoStartOnceOnIdle", () => Start());
         }
-#endif
+
+        // Reads %LOCALAPPDATA%\Acd.Mcp\config.json for an `auto_start`
+        // bool. Absence = true (auto-start). Failure to parse =
+        // true (autostart is the safe default; corrupt config shouldn't
+        // accidentally disable the plugin's main entry point).
+        //
+        // Format is intentionally trivial — one bool field — to keep
+        // the surface area small. If more knobs land later, this becomes
+        // a typed Options record; YAGNI for now.
+        private static bool ShouldAutoStart()
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Acd.Mcp", "config.json");
+                if (!System.IO.File.Exists(path)) return true;
+
+                var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(path));
+                if (doc.RootElement.TryGetProperty("auto_start", out var v) &&
+                    v.ValueKind is System.Text.Json.JsonValueKind.False)
+                {
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                SafeBoundary.Info("ShouldAutoStart",
+                    $"Failed to read config.json ({ex.GetType().Name}: {ex.Message}); defaulting to auto-start.");
+                return true;
+            }
+        }
 
         public void Terminate()
         {
@@ -183,10 +215,18 @@ namespace Acd.Mcp
             // wraps each registered step in SafeBoundary.Run, so a single
             // failure cannot skip the rest. Static fields are nulled so the
             // next DevReload cycle starts from a clean slate.
+            // Two-phase teardown: ResourceManager.Dispose runs every
+            // registered Dispose/Action in LIFO; nothing inside those
+            // steps reaches back to read the McpPlugin static fields,
+            // so the second-phase null block is safe to run after.
+            // Fields are nulled here (not via RegisterAction) so the
+            // teardown order is in one place and reviewers see at a
+            // glance every static the next DevReload cycle inherits.
             _resources?.Dispose();
             _resources = null;
 
-            _palette = null;
+            _paletteHost = null;
+            _statusRpc = null;
             _listener = null;
             _batchExecutor = null;
             _batchRpc = null;
@@ -268,7 +308,7 @@ namespace Acd.Mcp
             ed.WriteMessage($"\n  PID:        {Process.GetCurrentProcess().Id}");
             ed.WriteMessage($"\n  Listener:   {(_listener is { IsRunning: true } ? $"running on '{_listener.PipeName}'" : "stopped")}");
             ed.WriteMessage($"\n  Session:    {(_session is null ? "uninitialized" : "ready")}");
-            ed.WriteMessage($"\n  Palette:    {(_palette is null ? "not opened" : (_palette.Visible ? "visible" : "hidden"))}");
+            ed.WriteMessage($"\n  Palette:    {DescribePaletteStatus()}");
             ed.WriteMessage($"\n  Log file:   {SafeBoundary.LogFile ?? "<unset>"}");
             ed.WriteMessage("\n");
         });
@@ -289,64 +329,102 @@ namespace Acd.Mcp
                 return;
             }
 
-            if (_palette is null)
-            {
-                _palette = new ScriptPaletteSet(_executor!, _session!, _log!, _batchExecutor!, _scriptEditor!);
-                // Two steps in LIFO: register Dispose first so Close runs
-                // before Dispose on tear-down. The Visible guard preserves
-                // the original Terminate behaviour — Autodesk's base
-                // PaletteSet has been observed to NRE on Close() when its
-                // wrapped Window is half-initialised.
-                _resources!.Register("palette.Dispose", _palette);
-                _resources!.RegisterAction("palette.Close", () =>
-                {
-                    if (_palette is { Visible: true }) _palette.Close();
-                });
-            }
-            // The BATCH tab's view-model implements IBatchUiState; once the
-            // palette exists, route the batch RPC handler at it so the agent
-            // can query the user's current folder + mask + file selection.
-            _batchRpc = new BatchRpcHandler(_batchExecutor!, _palette.BatchViewModel);
-            // The SCRIPT RPC handler is wired here too so propose calls fail
-            // before the palette is open (no UI to display the staged
-            // proposal). The handler doesn't need a VM — it operates on
-            // the ScriptEditor directly — but gating on palette-open keeps
-            // the agent's experience symmetric with BATCH and avoids the
-            // "silent staging into the void" failure mode.
-            _scriptRpc = new ScriptRpcHandler(_scriptEditor!);
-            _palette.Visible = true;
+            // After phase-1 of the fragility fix, the palette is no
+            // longer where RPC handlers are constructed. They are wired
+            // in TryEnsureCore (via the PaletteHost), so this command
+            // is now exactly what its name implies: show the palette.
+            // The host marshals the create/show to this same main
+            // thread; both ACDMCP_PALETTE and agent-driven EnsureVisible
+            // arrive at GetOrCreateOnMainThread in one path.
+            var palette = _paletteHost!.GetOrCreateOnMainThread();
+            palette.Visible = true;
         });
 
-        // Listener-side method dispatch. Three prefixes are handled here:
-        //   batch.*  — routed to _batchRpc  (requires the palette to be open).
-        //   script.* — routed to _scriptRpc (requires the palette to be open
-        //              — see ShowPalette's note on staging-into-the-void).
-        //   dto.*    — routed to _dtoRpc    (always available once the DTO
-        //              graph is built; doesn't need the palette).
+        // Listener-side method dispatch. After phase-1 of the fragility
+        // fix all RPC handlers are wired in TryEnsureCore — the palette
+        // gating that previously broke every AutoCAD restart is gone.
+        // The remaining null-checks defend against the listener firing
+        // before TryEnsureCore (currently impossible — ACDMCP_START
+        // calls TryEnsureCore before binding the listener — but the
+        // assert keeps the contract explicit).
+        //
+        //   script.* — routed to _scriptRpc (auto-opens palette on
+        //              propose; pure editor ops succeed regardless).
+        //   batch.*  — routed to _batchRpc  (auto-opens palette on
+        //              propose; ops that read user-owned UI state
+        //              surface PALETTE_CLOSED when the palette is shut).
+        //   dto.*    — routed to _dtoRpc    (always available once the
+        //              DTO graph is built; doesn't touch the palette).
         private static Task<object?> ExtraRpcMethodHandler(string method, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken ct)
         {
             if (method.StartsWith("script."))
             {
                 if (_scriptRpc is null)
                     throw new InvalidOperationException(
-                        "SCRIPT palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
+                        "PLUGIN_NOT_INITIALIZED: SCRIPT RPC handler is not wired. " +
+                        "TryEnsureCore did not complete — check the AutoCAD log.");
                 return _scriptRpc.DispatchAsync(method, parameters, ct);
             }
             if (method.StartsWith("batch."))
             {
                 if (_batchRpc is null)
                     throw new InvalidOperationException(
-                        "BATCH palette is not open. Run ACDMCP_PALETTE inside AutoCAD first.");
+                        "PLUGIN_NOT_INITIALIZED: BATCH RPC handler is not wired. " +
+                        "TryEnsureCore did not complete — check the AutoCAD log.");
                 return _batchRpc.DispatchAsync(method, parameters, ct);
             }
             if (method.StartsWith("dto."))
             {
                 if (_dtoRpc is null)
                     throw new InvalidOperationException(
-                        "DTO graph is not initialised yet. Run ACDMCP_START inside AutoCAD first.");
+                        "DTO_NOT_READY: DTO graph is not initialised yet. " +
+                        "Run ACDMCP_START inside AutoCAD first.");
                 return _dtoRpc.DispatchAsync(method, parameters, ct);
             }
+            if (method.StartsWith("acdmcp."))
+            {
+                // Status surface intentionally degrades gracefully — if
+                // TryEnsureCore hasn't been called, return a minimal
+                // snapshot rather than throwing, so the agent can still
+                // diagnose a half-initialised plugin.
+                _statusRpc ??= new StatusRpcHandler(BuildStatusSnapshot);
+                return _statusRpc.DispatchAsync(method, parameters, ct);
+            }
             return Task.FromResult<object?>(null);
+        }
+
+        // Single source of truth for "what works right now." Mirrors
+        // exactly what the agent's skill / status resource sees and
+        // what ACDMCP_STATUS prints, so the user's diagnostic and the
+        // agent's diagnostic stay aligned.
+        internal static StatusSnapshot BuildStatusSnapshot()
+        {
+            bool pipeUp = _listener is { IsRunning: true };
+            bool palette = _paletteHost?.IsOpen ?? false;
+
+            CapabilityState ready() => new("ready", null);
+            CapabilityState unavailable(string r) => new("unavailable", r);
+            CapabilityState degraded(string r) => new("degraded", r);
+
+            return new StatusSnapshot(
+                version: Version,
+                pid: Process.GetCurrentProcess().Id,
+                pipe: pipeUp ? $"acd-mcp-{Process.GetCurrentProcess().Id}" : "<not listening>",
+                script_execute:      pipeUp ? ready() : unavailable("PIPE_NOT_LISTENING"),
+                script_propose:      pipeUp ? ready() : unavailable("PIPE_NOT_LISTENING"),
+                batch_propose:       pipeUp ? ready() : unavailable("PIPE_NOT_LISTENING"),
+                batch_run_test:      pipeUp ? (palette ? ready() : degraded("PALETTE_CLOSED")) : unavailable("PIPE_NOT_LISTENING"),
+                batch_get_selection: pipeUp ? (palette ? ready() : degraded("PALETTE_CLOSED")) : unavailable("PIPE_NOT_LISTENING"),
+                dto:                 _dtoRpc is null ? unavailable("DTO_NOT_READY") : ready());
+        }
+
+        // Used by ACDMCP_STATUS to describe palette state without
+        // duplicating the host's null-guard logic.
+        private static string DescribePaletteStatus()
+        {
+            if (_paletteHost is null) return "not initialised";
+            if (_paletteHost.Palette is null) return "not opened";
+            return _paletteHost.IsOpen ? "visible" : "hidden";
         }
 
         // Lazy-init the in-process core. Returns false with a human-readable
@@ -411,13 +489,45 @@ namespace Acd.Mcp
                     _batchExecutor = new BatchExecutor(_batchEditor);
                     _resources!.Register("batchExecutor", _batchExecutor);
                 }
-                // _scriptRpc is intentionally NOT constructed here — it's
-                // wired in ShowPalette() so a propose call that arrives
-                // before the palette is open fails loudly with the same
-                // "open the palette" guidance the BATCH path gives.
-                // Otherwise a proposal would stage successfully and the
-                // user would never see it (no VM subscribed to the
-                // ScriptProposed event).
+
+                // PaletteHost is the lazy-binding layer for the SCRIPT
+                // and BATCH palette. Constructed here (not in
+                // ShowPalette) so RPC handlers can be wired immediately
+                // — the palette itself is materialised on first need.
+                // See docs/review/fragility-review-2026-05-18.md
+                // finding-1 for why this matters.
+                if (_paletteHost is null)
+                {
+                    _paletteHost = new PaletteHost(
+                        _mainSync,
+                        factory: () =>
+                        {
+                            var p = new ScriptPaletteSet(_executor!, _session!, _log!, _batchExecutor!, _scriptEditor!);
+                            // Two steps in LIFO: register Dispose first
+                            // so Close runs before Dispose on tear-down.
+                            // The Visible guard preserves the original
+                            // Terminate behaviour — Autodesk's base
+                            // PaletteSet has been observed to NRE on
+                            // Close() when its wrapped Window is
+                            // half-initialised.
+                            _resources!.Register("palette.Dispose", p);
+                            _resources!.RegisterAction("palette.Close", () =>
+                            {
+                                if (p is { Visible: true }) p.Close();
+                            });
+                            return p;
+                        });
+                }
+
+                // RPC handlers are wired here — NOT inside ShowPalette —
+                // so an agent call that arrives before the palette is
+                // ever opened succeeds and triggers EnsureVisible(),
+                // instead of failing with the now-removed "palette is
+                // not open" error.
+                _scriptRpc ??= new ScriptRpcHandler(_scriptEditor!, _paletteHost);
+                _batchRpc  ??= new BatchRpcHandler(_batchExecutor!, _paletteHost);
+                _statusRpc ??= new StatusRpcHandler(BuildStatusSnapshot);
+
                 reason = "";
                 return true;
             }
