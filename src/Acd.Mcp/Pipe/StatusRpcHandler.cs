@@ -44,7 +44,7 @@ namespace Acd.Mcp.Pipe
         CapabilityState script_propose,
         CapabilityState batch_propose,
         CapabilityState batch_run_test,
-        CapabilityState batch_get_selection,
+        CapabilityState batch_list_files,
         CapabilityState dto);
 
     public sealed record CapabilityState(string status, string? reason);

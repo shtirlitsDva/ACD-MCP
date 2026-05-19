@@ -127,7 +127,7 @@ The bridge tool wrappers swallow `AcadTransportException` and
 | `PINNED_PID_GONE`           | Bridge: --pid dead, no fallback | Ask user to restart AutoCAD |
 | `PIPE_NOT_LISTENING`        | Bridge: retries exhausted    | Read `acd-mcp://status`, retry once |
 | `PIPE_BROKEN`               | Bridge: mid-call I/O failure | Read `acd-mcp://status`, retry once |
-| `PALETTE_CLOSED`            | Plugin: batch.runTest / batch.getSelection | Ask user to open palette and set selection |
+| `PALETTE_CLOSED`            | Plugin: batch.runTest / batch.listFiles | Ask user to open palette and set folder + mask |
 | `PLUGIN_NOT_INITIALIZED`    | Plugin: half-load            | Surface to user — check AutoCAD log |
 | `DTO_NOT_READY`             | Plugin: dto.* before init    | Wait for ACDMCP_START, retry once |
 </error-codes>
@@ -144,7 +144,7 @@ The bridge tool wrappers swallow `AcadTransportException` and
   "script_propose":      { "status": "ready",       "reason": null },
   "batch_propose":       { "status": "ready",       "reason": null },
   "batch_run_test":      { "status": "degraded",    "reason": "PALETTE_CLOSED" },
-  "batch_get_selection": { "status": "degraded",    "reason": "PALETTE_CLOSED" },
+  "batch_list_files":    { "status": "degraded",    "reason": "PALETTE_CLOSED" },
   "dto":                 { "status": "ready",       "reason": null }
 }
 ```

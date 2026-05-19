@@ -24,7 +24,7 @@ namespace Acd.Mcp.Batch.Runtime
     //   batch.listSavedScripts  — paginated saved-script list.
     //   batch.getSavedScript    — fetch one saved script by name.
     //   batch.getEditor         — fetch the editor's current text.
-    //   batch.getSelection      — fetch the UI's current folder+mask+files.
+    //   batch.listFiles         — fetch the UI's current folder+mask+files.
     //
     // The Bridge fronts a subset of these as MCP tools and the rest as
     // MCP resources. The plugin-side handler doesn't care how the Bridge
@@ -58,7 +58,7 @@ namespace Acd.Mcp.Batch.Runtime
                 "batch.listSavedScripts" => HandleListSavedScripts(parameters),
                 "batch.getSavedScript"   => HandleGetSavedScript(parameters),
                 "batch.getEditor"     => HandleGetEditor(),
-                "batch.getSelection"  => HandleGetSelection(),
+                "batch.listFiles"     => HandleListFiles(),
                 _ => null, // signals "method not handled by this handler"
             };
         }
@@ -226,11 +226,11 @@ namespace Acd.Mcp.Batch.Runtime
         private object HandleGetEditor() =>
             new { body = _executor.CurrentScript, mirror_path = _executor.MirrorPath };
 
-        private object HandleGetSelection()
+        private object HandleListFiles()
         {
             var uiState = UiState
                 ?? throw new InvalidOperationException(
-                    "BATCH palette is not open. Open it (ACDMCP_PALETTE) to query the file selection.");
+                    "BATCH palette is not open. Open it (ACDMCP_PALETTE) to query the file list.");
 
             var sel = uiState.CurrentSelection;
             return new

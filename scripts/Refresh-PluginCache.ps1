@@ -11,7 +11,7 @@
   The cache is a SNAPSHOT taken at `/plugin install` time; subsequent
   rebuilds of the bridge (or git pulls of the repo) do NOT update what
   the running bridge actually loads. Symptom: agent calls
-  `autocad_batch_get_selection` and sees the OLD bridge's behaviour
+  `autocad_batch_list_files` and sees the OLD bridge's behaviour
   despite a fresh `dotnet publish`.
 
   This script copies the repo's bin/ contents into every matching cache

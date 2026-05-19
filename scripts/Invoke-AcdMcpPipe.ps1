@@ -43,7 +43,7 @@
     execute              — run a C# REPL snippet (params: code, timeout_ms)
     batch.proposeScript  — params: name, script_body, input_summary?
     batch.runTest        — params: name?
-    batch.getSelection   — no params
+    batch.listFiles      — no params
     repl.proposeScript   — params: name, script_body, input_summary?
     repl.getEditor       — no params
     dto.list             — list registered DTO types

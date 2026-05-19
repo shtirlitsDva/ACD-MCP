@@ -124,7 +124,7 @@ try {
     # The verification call.
     Send-Frame @{
         jsonrpc = '2.0'; id = 2; method = 'tools/call'
-        params = @{ name = 'autocad_batch_get_selection'; arguments = @{} }
+        params = @{ name = 'autocad_batch_list_files'; arguments = @{} }
     }
     $rsp = Read-Frame ($TimeoutSeconds * 1000)
 

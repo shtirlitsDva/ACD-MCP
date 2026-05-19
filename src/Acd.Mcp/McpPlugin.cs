@@ -35,7 +35,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v28-fragility-fix-v2";
+        private const string Version = "v29-get-selection";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -414,7 +414,7 @@ namespace Acd.Mcp
                 script_propose:      pipeUp ? ready() : unavailable("PIPE_NOT_LISTENING"),
                 batch_propose:       pipeUp ? ready() : unavailable("PIPE_NOT_LISTENING"),
                 batch_run_test:      pipeUp ? (palette ? ready() : degraded("PALETTE_CLOSED")) : unavailable("PIPE_NOT_LISTENING"),
-                batch_get_selection: pipeUp ? (palette ? ready() : degraded("PALETTE_CLOSED")) : unavailable("PIPE_NOT_LISTENING"),
+                batch_list_files:    pipeUp ? (palette ? ready() : degraded("PALETTE_CLOSED")) : unavailable("PIPE_NOT_LISTENING"),
                 dto:                 _dtoRpc is null ? unavailable("DTO_NOT_READY") : ready());
         }
 
@@ -524,7 +524,7 @@ namespace Acd.Mcp
                 // ever opened succeeds and triggers EnsureVisible(),
                 // instead of failing with the now-removed "palette is
                 // not open" error.
-                _scriptRpc ??= new ScriptRpcHandler(_scriptEditor!, _paletteHost);
+                _scriptRpc ??= new ScriptRpcHandler(_scriptEditor!, _paletteHost, _mainSync);
                 _batchRpc  ??= new BatchRpcHandler(_batchExecutor!, _paletteHost);
                 _statusRpc ??= new StatusRpcHandler(BuildStatusSnapshot);
 

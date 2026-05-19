@@ -15,7 +15,7 @@ The user clicks `ACDMCP_START` (or it's autoloaded) to open the pipe. The user o
 <two-modes>
 1. **SCRIPT** — single-drawing operations against the active document. Two tools (`autocad_script_execute`, `autocad_script_propose`). See sibling **`/acd-mcp:script`** for the full surface, conventions, return-value serialization, propose-vs-execute decision rule, and the staging-model contract.
 
-2. **BATCH** — multi-file edits across many `.dwg` files in a folder. Three tools (`autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_batch_get_selection`) + the `acd-mcp://batch-runs/last` resource. See sibling **`/acd-mcp:batch`** for the full surface, Step DSL, Test→Live workflow, and the staging-model contract.
+2. **BATCH** — multi-file edits across many `.dwg` files in a folder. Three tools (`autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_batch_list_files`) + the `acd-mcp://batch-runs/last` resource. See sibling **`/acd-mcp:batch`** for the full surface, Step DSL, Test→Live workflow, and the staging-model contract.
 </two-modes>
 
 <must-load-a-flavor-before-any-mcp-call>
@@ -52,7 +52,7 @@ On first use in a session, sanity-check the surface:
      * `PIPE_NOT_LISTENING` → wait a few seconds and retry once; the listener may still be coming up. If it persists, ask the user to run `ACDMCP_START`.
      * `AMBIGUOUS_AUTOCADS` / `MULTIPLE_AUTOCAD_PLUGINS` → ask the user to disambiguate via the bridge's `--pid` flag in the MCP config.
 
-2. **Palette up?** No longer a hard prerequisite — `autocad_script_propose` and `autocad_batch_propose_script` auto-open the palette on call (fragility-fix v2). The only handlers that still require an open palette are the BATCH selection readers (`autocad_batch_get_selection`, `autocad_batch_run_test` — both surface `error_code: "PALETTE_CLOSED"` when the palette is shut). The agent's response: ask the user to open the palette, set folder + mask, then retry. The bridge never throws for any of these cases (V2-G4): always read `result.ok` first, then `error_code` / `error_message` on failure.
+2. **Palette up?** No longer a hard prerequisite — `autocad_script_propose` and `autocad_batch_propose_script` auto-open the palette on call (fragility-fix v2). The only handlers that still require an open palette are the BATCH selection readers (`autocad_batch_list_files`, `autocad_batch_run_test` — both surface `error_code: "PALETTE_CLOSED"` when the palette is shut). The agent's response: ask the user to open the palette, set folder + mask, then retry. The bridge never throws for any of these cases (V2-G4): always read `result.ok` first, then `error_code` / `error_message` on failure.
 
 3. **AECC stack loaded?** If you'll touch entity metadata, probe:
    ```csharp

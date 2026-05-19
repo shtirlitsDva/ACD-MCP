@@ -13,7 +13,7 @@
 <ApplicationPackage SchemaVersion="1.0"
                     AutodeskProduct="AutoCAD"
                     Name="ACD-MCP"
-                    AppVersion="0.4.0"
+                    AppVersion="0.5.0"
                     ProductCode="{B7F5E8D4-3C29-4A1B-9F8E-2D6C7E4B5A93}"
                     Author="Norsyn"
                     Description="Live C# REPL + multi-file batch runner exposed as an MCP server."

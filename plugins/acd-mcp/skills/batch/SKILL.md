@@ -36,7 +36,7 @@ Every `autocad_batch_*` tool returns a **discriminated success-shape**. Always c
 { ok: false, error_code: "<numeric>", error_message: "<plugin text>",
   run_id: null, pending: null, results_resource: null, note: null }
 
-# autocad_batch_get_selection
+# autocad_batch_list_files
 { ok: true,  folder, mask, recurse, files, count,
   error_code: null, error_message: null }
 { ok: false, error_code: "<numeric>", error_message: "<plugin text>",
@@ -185,7 +185,7 @@ The exact ordered workflow for a typical task:
 
 1. **READ EDITOR FIRST.** See `<read-mirror-before-proposing>` — this is a hard rule, not a soft suggestion.
 
-2. **Sample one or two target drawings via SCRIPT.** The active drawing is often NOT the right sample — the user typically points the BATCH palette at a folder + filename mask (e.g. `*_SHT.dwg` in some directory) and the target set is what matches the mask, not whatever happens to be open. Get the folder + mask via the `autocad_batch_get_selection` tool (see step 5 below), pick one or two representative `.dwg` paths, and **sideload** them via `autocad_script_execute` to inspect:
+2. **Sample one or two target drawings via SCRIPT.** The active drawing is often NOT the right sample — the user typically points the BATCH palette at a folder + filename mask (e.g. `*_SHT.dwg` in some directory) and the target set is what matches the mask, not whatever happens to be open. Get the folder + mask via the `autocad_batch_list_files` tool (see step 5 below), pick one or two representative `.dwg` paths, and **sideload** them via `autocad_script_execute` to inspect:
 
    ```csharp
    // `using` directives go FIRST (top-level rule for SCRIPT submissions).
@@ -221,7 +221,7 @@ The exact ordered workflow for a typical task:
 
 5. **Get the folder selection.** Call
    ```
-   autocad_batch_get_selection()
+   autocad_batch_list_files()
    ```
    Returns `{ folder, mask, recurse, files: [...] }` reflecting what the user has set in the BATCH palette right now. **You cannot change these** — only the user can, via the palette UI. If the user has instead pasted explicit paths into the conversation (e.g. "run on these three files: ..."), prefer those and tell the user to either match the selection in the palette or accept that Live will use whatever the palette shows.
 

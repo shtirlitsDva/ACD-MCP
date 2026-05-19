@@ -1,9 +1,15 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Acd.Mcp.Batch;
 using Acd.Mcp.Ui;
+using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.EditorInput;
+using Application = Autodesk.AutoCAD.ApplicationServices.Application;
+using Document = Autodesk.AutoCAD.ApplicationServices.Document;
 
 namespace Acd.Mcp.Script
 {
@@ -19,6 +25,10 @@ namespace Acd.Mcp.Script
     //                             input).
     //   script.listSavedScripts — paginated saved-script list (Script flavor).
     //   script.getSavedScript   — fetch one saved script by name.
+    //   script.getSelection     — read the active drawing's pickfirst
+    //                             selection (entity handles, types,
+    //                             layers, block names) + the drawing
+    //                             that owns them.
     //
     // The SCRIPT surface has no folder/mask/file selection or run-test
     // analog — direct execution stays on the existing autocad_script_execute
@@ -27,8 +37,12 @@ namespace Acd.Mcp.Script
     {
         private readonly ScriptEditor _editor;
         private readonly IPaletteHost _paletteHost;
+        private readonly SynchronizationContext _mainSync;
 
-        public ScriptRpcHandler(ScriptEditor editor, IPaletteHost paletteHost)
+        public ScriptRpcHandler(
+            ScriptEditor editor,
+            IPaletteHost paletteHost,
+            SynchronizationContext mainSync)
         {
             if (editor is null) throw new ArgumentNullException(nameof(editor));
             if (editor.Flavor != ScriptFlavor.Script)
@@ -37,6 +51,7 @@ namespace Acd.Mcp.Script
                     nameof(editor));
             _editor = editor;
             _paletteHost = paletteHost;
+            _mainSync = mainSync ?? throw new ArgumentNullException(nameof(mainSync));
         }
 
         public Task<object?> DispatchAsync(string method, JsonElement parameters, CancellationToken ct)
@@ -47,6 +62,7 @@ namespace Acd.Mcp.Script
                 "script.getEditor"        => HandleGetEditor(),
                 "script.listSavedScripts" => HandleListSavedScripts(parameters),
                 "script.getSavedScript"   => HandleGetSavedScript(parameters),
+                "script.getSelection"     => HandleGetSelection(),
                 _ => null,
             };
             return Task.FromResult(result);
@@ -118,6 +134,115 @@ namespace Acd.Mcp.Script
             var s = _editor.Store.TryGet(ScriptFlavor.Script, name);
             if (s is null) throw new InvalidOperationException($"No saved script named '{name}'.");
             return new { name = s.Name, flavor = s.Flavor.ToString().ToLowerInvariant(), summary = s.Summary, body = s.Body, path = s.Path };
+        }
+
+        // Reads the active drawing's pickfirst selection on the main
+        // thread. The dispatcher runs on a threadpool thread (pipe
+        // listener), so any Database / Editor read MUST be marshalled
+        // via _mainSync.Send. We capture exceptions inside the
+        // delegate and rethrow on the caller's thread so the pipe
+        // dispatcher's existing error -> JSON-RPC envelope path
+        // handles them uniformly.
+        //
+        // For dynamic blocks (BlockReference.IsDynamicBlock) we read
+        // the name from DynamicBlockTableRecord rather than the
+        // anonymous BlockTableRecord — that's the name the user sees
+        // in the Properties palette and the friendliest signal for
+        // the agent.
+        private object HandleGetSelection()
+        {
+            Exception? captured = null;
+            object? result = null;
+            _mainSync.Send(_ =>
+            {
+                try
+                {
+                    var doc = Application.DocumentManager.MdiActiveDocument;
+                    if (doc is null)
+                        throw new InvalidOperationException(
+                            "NO_ACTIVE_DOCUMENT: no drawing is currently open in AutoCAD.");
+
+                    using (doc.LockDocument())
+                    {
+                        var psr = doc.Editor.SelectImplied();
+                        string docName = ResolveDocumentName(doc);
+                        string? docPath = ResolveDocumentPath(doc);
+
+                        if (psr.Status != PromptStatus.OK || psr.Value is null)
+                        {
+                            result = new
+                            {
+                                document_name = docName,
+                                document_path = docPath,
+                                count = 0,
+                                entities = Array.Empty<object>(),
+                            };
+                            return;
+                        }
+
+                        var entities = new List<object>();
+                        using (var tx = doc.Database.TransactionManager.StartTransaction())
+                        {
+                            foreach (var id in psr.Value.GetObjectIds())
+                            {
+                                if (tx.GetObject(id, OpenMode.ForRead) is not Entity ent) continue;
+
+                                string? blockName = null;
+                                if (ent is BlockReference br)
+                                {
+                                    var btrId = br.IsDynamicBlock
+                                        ? br.DynamicBlockTableRecord
+                                        : br.BlockTableRecord;
+                                    var btr = (BlockTableRecord)tx.GetObject(btrId, OpenMode.ForRead);
+                                    blockName = btr.Name;
+                                }
+
+                                entities.Add(new
+                                {
+                                    handle       = id.Handle.ToString(),
+                                    object_class = ent.GetType().Name,
+                                    layer        = ent.Layer,
+                                    block_name   = blockName,
+                                });
+                            }
+                            tx.Commit();
+                        }
+
+                        result = new
+                        {
+                            document_name = docName,
+                            document_path = docPath,
+                            count = entities.Count,
+                            entities,
+                        };
+                    }
+                }
+                catch (Exception ex)
+                {
+                    captured = ex;
+                }
+            }, null);
+
+            if (captured is not null) throw captured;
+            return result!;
+        }
+
+        // doc.Database.Filename is "" for unsaved drawings; doc.Name
+        // is the title-bar label (e.g. "Drawing1.dwg" for unsaved,
+        // "Floor1.dwg" or the full path depending on AutoCAD settings
+        // for saved). Prefer the path-derived filename when available
+        // so the agent always sees a real filename, never a full path
+        // it has to strip itself.
+        private static string ResolveDocumentName(Document doc)
+        {
+            var path = doc.Database.Filename;
+            return string.IsNullOrEmpty(path) ? doc.Name : Path.GetFileName(path);
+        }
+
+        private static string? ResolveDocumentPath(Document doc)
+        {
+            var path = doc.Database.Filename;
+            return string.IsNullOrEmpty(path) ? null : path;
         }
 
         // Parameter helpers — duplicated from BatchRpcHandler intentionally

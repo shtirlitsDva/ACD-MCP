@@ -264,7 +264,7 @@ Five tools, four resources. Tool annotations follow the MCP spec (`ReadOnly` / `
 
 ### Response shape (batch tools + script-propose tool)
 
-`autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_batch_get_selection`, and `autocad_script_propose` all return a **discriminated success-shape**. Always check `ok` first:
+`autocad_batch_propose_script`, `autocad_batch_run_test`, `autocad_batch_list_files`, and `autocad_script_propose` all return a **discriminated success-shape**. Always check `ok` first:
 
 ```
 { ok: true,  ...payload fields..., error_code: null, error_message: null }   # success

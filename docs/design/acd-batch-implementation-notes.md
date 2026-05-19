@@ -266,7 +266,7 @@ the palette first.
 
 <gotcha name="folder-not-selected">
 Agent batch.runTest fails if the user hasn't picked a folder in the
-BATCH palette. The agent should query batch.getSelection via the
+BATCH palette. The agent should query batch.listFiles via the
 plugin (no MCP tool exposes this yet — manual addition if needed).
 </gotcha>
 

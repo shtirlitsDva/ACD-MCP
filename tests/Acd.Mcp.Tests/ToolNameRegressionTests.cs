@@ -18,6 +18,7 @@ namespace Acd.Mcp.Tests
         {
             "autocad_execute_csharp",
             "autocad_repl_propose_script",
+            "autocad_batch_get_selection",
         };
 
         [Fact]

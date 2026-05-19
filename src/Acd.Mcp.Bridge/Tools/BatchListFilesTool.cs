@@ -19,35 +19,36 @@ namespace Acd.Mcp.Bridge.Tools
     //   Idempotent  = true   (snapshot of palette state; same inputs => same output)
     //   OpenWorld   = true   (UI state is part of the open world)
     [McpServerToolType]
-    public sealed class BatchGetSelectionTool
+    public sealed class BatchListFilesTool
     {
         private readonly AcadClient _client;
 
-        public BatchGetSelectionTool(AcadClient client)
+        public BatchListFilesTool(AcadClient client)
         {
             _client = client;
         }
 
         [McpServerTool(
-            Name = "autocad_batch_get_selection",
+            Name = "autocad_batch_list_files",
             ReadOnly = true,
             Destructive = false,
             Idempotent = true,
             OpenWorld = true),
          Description(
-            "Return the BATCH palette's current selection: { folder, mask, recurse, files: [...], count }. " +
+            "Return the BATCH palette's current folder + mask + expanded .dwg file list: " +
+            "{ folder, mask, recurse, files: [...], count }. " +
             "The agent uses this to know exactly which files autocad_batch_run_test would operate on right " +
             "now, to pick representative samples for sideload inspection, and to confirm the user has set " +
-            "the right folder + mask before kicking off a Test run. The agent cannot change the selection — " +
+            "the right folder + mask before kicking off a Test run. The agent cannot change the file list — " +
             "only the user can, via the palette UI. If the user instead pasted explicit paths into the " +
-            "conversation, prefer those and tell the user to match the selection in the palette.")]
-        public async Task<BatchSelectionResult> GetSelectionAsync(CancellationToken ct = default)
+            "conversation, prefer those and tell the user to match the folder + mask in the palette.")]
+        public async Task<BatchFilesResult> ListFilesAsync(CancellationToken ct = default)
         {
             try
             {
-                var p = await _client.CallAsync<BatchSelectionPayload>("batch.getSelection",
+                var p = await _client.CallAsync<BatchFilesPayload>("batch.listFiles",
                     @params: null, ct).ConfigureAwait(false);
-                return new BatchSelectionResult(
+                return new BatchFilesResult(
                     ok: true, error_code: null, error_message: null,
                     p.folder, p.mask, p.recurse, p.files, p.count);
             }
@@ -56,7 +57,7 @@ namespace Acd.Mcp.Bridge.Tools
                 // G4: typical failure here is "BATCH palette is not open" —
                 // surface it on the success path so the SDK doesn't strip it
                 // into a generic invocation-error string.
-                return new BatchSelectionResult(
+                return new BatchFilesResult(
                     ok: false,
                     error_code: ex.Code.ToString(CultureInfo.InvariantCulture),
                     error_message: ex.Message,
@@ -64,7 +65,7 @@ namespace Acd.Mcp.Bridge.Tools
             }
             catch (AcadTransportException ex)
             {
-                return new BatchSelectionResult(
+                return new BatchFilesResult(
                     ok: false,
                     error_code: ex.ErrorCode,
                     error_message: ex.Message,
@@ -73,16 +74,16 @@ namespace Acd.Mcp.Bridge.Tools
         }
     }
 
-    // Plugin wire shape for batch.getSelection. Bridge wraps this in
-    // BatchSelectionResult on the success path.
-    internal sealed record BatchSelectionPayload(
+    // Plugin wire shape for batch.listFiles. Bridge wraps this in
+    // BatchFilesResult on the success path.
+    internal sealed record BatchFilesPayload(
         string folder,
         string mask,
         bool recurse,
         string[] files,
         int count);
 
-    public sealed record BatchSelectionResult(
+    public sealed record BatchFilesResult(
         bool ok,
         string? error_code,
         string? error_message,
