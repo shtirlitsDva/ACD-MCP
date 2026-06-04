@@ -16,19 +16,32 @@ using SynchronizationContext = System.Threading.SynchronizationContext;
 
 [assembly: ExtensionApplication(typeof(Acd.Mcp.McpPlugin))]
 
-#if DEBUG
-// In DEBUG we expect to be loaded by DevReload. The empty NoAutoCommands type
-// "claims" command registration so AutoCAD's ExtensionLoader skips its auto-scan,
-// leaving DevReload's CommandRegistrar (which uses Utils.AddCommand) responsible.
-// This matters because Utils.AddCommand is removable on ALC unload, while AutoCAD's
-// permanent CommandClass.AddCommand is not — keeping the permanent path would yield
-// eDuplicateKey on the second hot-reload.
+// ACD-MCP builds in two flavours that differ only in WHO registers the plugin's
+// [CommandMethod]s. The marker below is emitted in exactly one of them.
+//
+//   * DEFAULT — "Netload" flavour (ISOLATED_ALC undefined). AutoCAD's own
+//     ExtensionLoader loads the DLL (a manual NETLOAD, or the .bundle autoload),
+//     auto-scans it, and registers the commands. This is the out-of-the-box build:
+//     CI, the marketplace bin, the bundle, and what internet users get. The marker
+//     MUST be absent here — with it present AutoCAD would scan only NoAutoCommands
+//     and register zero commands.
+//
+//   * ISOLATED_ALC — "IsolatedALC" flavour (built via the FolderProfile publish
+//     profile, or -p:IsolatedAlc=true). A custom loader (DevReload in dev, NSLOAD
+//     for deployment) byte-loads the DLL into a collectible AssemblyLoadContext and
+//     registers the commands itself via the *removable* Utils.AddCommand. AutoCAD's
+//     ExtensionLoader STILL sees the byte-load and would ALSO register them via the
+//     *permanent* CommandClass.AddCommand — colliding and surviving the ALC unload,
+//     so the next reload throws eDuplicateKey. The empty NoAutoCommands type "claims"
+//     command registration so AutoCAD's auto-scan finds nothing, leaving the loader's
+//     removable registration as the only one.
+#if ISOLATED_ALC
 [assembly: CommandClass(typeof(Acd.Mcp.NoAutoCommands))]
 #endif
 
 namespace Acd.Mcp
 {
-#if DEBUG
+#if ISOLATED_ALC
     public class NoAutoCommands { }
 #endif
 
