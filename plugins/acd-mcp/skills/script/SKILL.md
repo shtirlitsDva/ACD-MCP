@@ -91,7 +91,7 @@ If you need to express a side-effect-only constructor and discard the value, ass
 </trailing-expression-return-and-auto-return-gotchas>
 
 <serialization-etiquette>
-SCRIPT replies contain `returnValueJson` — JSON produced by a DTO-driven serializer. The serializer projects each value through a registered DTO; unknown Autodesk-namespaced types emit the marker `{"$unsupported":"FullTypeName"}`.
+SCRIPT replies contain `returnValueJson` — an embedded JSON value (object, array, or scalar) produced by a DTO-driven serializer. It is a real nested JSON value in the response, **not** a JSON-encoded string — read its fields directly; do not `JSON.parse` it. The serializer projects each value through a registered DTO; unknown Autodesk-namespaced types emit the marker `{"$unsupported":"FullTypeName"}`.
 
 To get tidy, useful replies:
 

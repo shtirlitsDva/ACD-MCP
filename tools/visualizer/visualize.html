@@ -126,8 +126,11 @@ function loadJson(t) {
   try { parsed = JSON.parse(t); }
   catch (e) { alert('Invalid JSON: ' + e.message); return; }
   // Accept either the raw return value or the full MCP envelope.
-  if (parsed.returnValueJson) {
-    try { parsed = JSON.parse(parsed.returnValueJson); }
+  // returnValueJson is now embedded as raw JSON (object/array); older dumps
+  // carried it as a JSON string — handle both.
+  if (parsed.returnValueJson != null) {
+    const rv = parsed.returnValueJson;
+    try { parsed = (typeof rv === 'string') ? JSON.parse(rv) : rv; }
     catch { /* leave parsed alone */ }
   }
   if (!parsed.entities) {

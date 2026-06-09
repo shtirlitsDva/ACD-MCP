@@ -116,14 +116,17 @@ namespace Acd.Mcp.Scripting
         // converter's `$unsupported` marker. Agents pattern-match on the
         // leading `$` to spot serializer-emitted sentinels — keeping both
         // markers in the same family avoids a second pattern.
-        private string? SerializeReturnValue(object? value)
+        private JsonElement? SerializeReturnValue(object? value)
         {
             if (value is null) return null;
             if (_jsonOptions is null) return null;
 
             try
             {
-                return JsonSerializer.Serialize(value, value.GetType(), _jsonOptions);
+                // SerializeToElement (not Serialize-to-string): ExecuteResult
+                // carries this as a JsonElement so downstream re-serialization
+                // embeds it raw instead of escaping it. See ExecuteResult.
+                return JsonSerializer.SerializeToElement(value, value.GetType(), _jsonOptions);
             }
             catch (Exception ex)
             {
@@ -134,7 +137,7 @@ namespace Acd.Mcp.Scripting
                 {
                     ["$serialization_error"] = ex.Message,
                 };
-                return JsonSerializer.Serialize(marker);
+                return JsonSerializer.SerializeToElement(marker);
             }
         }
 
