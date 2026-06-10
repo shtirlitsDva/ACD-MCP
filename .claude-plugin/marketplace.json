@@ -12,6 +12,13 @@
       "description": "Live C# REPL plus multi-file batch runner inside a running AutoCAD 2025+ process.",
       "repository": "https://github.com/shtirlitsDva/ACD-MCP",
       "keywords": ["autocad", "civil-3d", "csharp", "repl", "batch", "automation"]
+    },
+    {
+      "name": "rvt-mcp",
+      "source": "./plugins/rvt-mcp",
+      "description": "Live C# REPL inside a running Revit 2025+ process (revit_script_execute).",
+      "repository": "https://github.com/shtirlitsDva/ACD-MCP",
+      "keywords": ["revit", "csharp", "repl", "automation", "bim"]
     }
   ]
 }
