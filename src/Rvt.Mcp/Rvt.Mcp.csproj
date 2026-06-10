@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Rvt.Mcp</RootNamespace>
+    <AssemblyName>Rvt.Mcp</AssemblyName>
+    <UseWPF>false</UseWPF>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- RoslynReferences (linked) reads in-memory PE blobs via pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference-only Revit 2025 API (CI-friendly, mirrors the AutoCAD.NET
+         NuGet pattern). Revit provides the real assemblies at runtime. -->
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2025.*" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2025.*" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.12.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AutoCAD-free pieces shared with the AutoCAD plugin via linked
+         compile — wire types and Roslyn plumbing are host-agnostic. -->
+    <Compile Include="..\Acd.Mcp\Pipe\Protocol.cs" Link="Shared\Protocol.cs" />
+    <Compile Include="..\Acd.Mcp\ExecuteResult.cs" Link="Shared\ExecuteResult.cs" />
+    <Compile Include="..\Acd.Mcp\Scripting\TrailingExpressionRewriter.cs" Link="Shared\TrailingExpressionRewriter.cs" />
+    <Compile Include="..\Acd.Mcp\Scripting\RoslynReferences.cs" Link="Shared\RoslynReferences.cs" />
+    <Compile Include="..\Acd.Mcp\Scripting\ConsoleCapture.cs" Link="Shared\ConsoleCapture.cs" />
+  </ItemGroup>
+
+</Project>

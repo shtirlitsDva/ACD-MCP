@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Rvt.Mcp.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Real install assembly, copied local: the converter's typed branches
+         (case ElementId / XYZ) force RevitAPI to load at JIT time even for
+         the $unsupported fallback tests, and ElementId/XYZ are plain managed
+         types constructible outside Revit. The NuGet reference packages are
+         compile-time only, so they can't serve the test runtime. -->
+    <Reference Include="RevitAPI">
+      <HintPath Condition="'$(RevitPath2025)' == ''">C:\Program Files\Autodesk\Revit 2025\RevitAPI.dll</HintPath>
+      <HintPath Condition="'$(RevitPath2025)' != ''">$(RevitPath2025)\RevitAPI.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SUT files, link-included (repo convention) to keep RevitAPIUI and
+         Roslyn out of the test build where possible. -->
+    <Compile Include="..\..\src\Rvt.Mcp\RvtJson.cs" Link="Sut\RvtJson.cs" />
+    <Compile Include="..\..\src\Rvt.Mcp.Bridge\RevitTransport.cs" Link="Sut\RevitTransport.cs" />
+    <Compile Include="..\..\src\Rvt.Mcp.Bridge\RevitDiscovery.cs" Link="Sut\RevitDiscovery.cs" />
+    <Compile Include="..\..\src\Rvt.Mcp.Bridge\RevitPipe.cs" Link="Sut\RevitPipe.cs" />
+    <Compile Include="..\..\src\Acd.Mcp\Pipe\Protocol.cs" Link="Sut\Protocol.cs" />
+  </ItemGroup>
+
+</Project>
