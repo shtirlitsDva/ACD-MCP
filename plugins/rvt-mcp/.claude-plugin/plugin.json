@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "rvt-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Live C# script session inside a running Revit 2025+ process. Drives a persistent CSharpScript session in Revit API context (ExternalEvent), with typed JSON projections for Element/ElementId/XYZ. Deploy the add-in via scripts/Deploy-RevitAddin.ps1 first.",
   "author": {
     "name": "Norsyn"
