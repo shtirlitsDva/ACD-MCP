@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Rvt.Mcp.Loader</RootNamespace>
+    <AssemblyName>Rvt.Mcp.Loader</AssemblyName>
+    <UseWPF>false</UseWPF>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- Pull the engine's NuGet closure (Roslyn et al.) into THIS folder —
+         the isolated ALC probes side-by-side with Rvt.Mcp.dll. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2025.*" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2025.*" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The real engine and all its dependencies land in this project's
+         output folder; the loader picks Rvt.Mcp.dll up from there into the
+         isolated ALC. -->
+    <ProjectReference Include="..\Rvt.Mcp\Rvt.Mcp.csproj" />
+  </ItemGroup>
+
+</Project>

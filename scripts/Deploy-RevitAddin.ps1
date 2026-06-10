@@ -27,11 +27,13 @@ if ($RevitYear -lt 2025) {
     throw "Rvt.Mcp targets Revit 2025+ (net8). Revit $RevitYear is .NET Framework — not supported yet."
 }
 
-$csproj = Join-Path $repoRoot 'src\Rvt.Mcp\Rvt.Mcp.csproj'
+# The loader project pulls in the engine via ProjectReference, so one build
+# produces the complete folder (loader + engine + Roslyn).
+$csproj = Join-Path $repoRoot 'src\Rvt.Mcp.Loader\Rvt.Mcp.Loader.csproj'
 dotnet build $csproj -c $Configuration -p:Platform=x64 --nologo -v q
-if ($LASTEXITCODE -ne 0) { throw 'Rvt.Mcp build failed' }
+if ($LASTEXITCODE -ne 0) { throw 'Rvt.Mcp.Loader build failed' }
 
-$dll = Join-Path $repoRoot "src\Rvt.Mcp\bin\$Configuration\Rvt.Mcp.dll"
+$dll = Join-Path $repoRoot "src\Rvt.Mcp.Loader\bin\$Configuration\Rvt.Mcp.Loader.dll"
 if (-not (Test-Path $dll)) { throw "build output not found: $dll" }
 
 New-Item -ItemType Directory -Force $manifestDir | Out-Null
@@ -42,7 +44,7 @@ New-Item -ItemType Directory -Force $manifestDir | Out-Null
     <Name>Rvt.Mcp</Name>
     <Assembly>$dll</Assembly>
     <AddInId>f4ac6a14-27e4-442f-a254-300c83e2b55a</AddInId>
-    <FullClassName>Rvt.Mcp.RvtMcpApp</FullClassName>
+    <FullClassName>Rvt.Mcp.Loader.LoaderApp</FullClassName>
     <VendorId>DVRL</VendorId>
     <VendorDescription>Rvt.Mcp — C# script REPL for agents</VendorDescription>
   </AddIn>

@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using Acd.Mcp;
 using Acd.Mcp.Scripting;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
+using Microsoft.CodeAnalysis.Scripting.Hosting;
 
 namespace Rvt.Mcp
 {
@@ -19,6 +21,7 @@ namespace Rvt.Mcp
         private readonly JsonSerializerOptions? _jsonOptions;
         private ScriptState? _state;
         private ScriptOptions _options = BuildOptions();
+        private InteractiveAssemblyLoader _loader = BuildLoader();
 
         public RvtScriptSession(RvtGlobals globals, JsonSerializerOptions? jsonOptions = null)
         {
@@ -35,9 +38,15 @@ namespace Rvt.Mcp
 
             try
             {
+                // Create with an explicit InteractiveAssemblyLoader: this add-in
+                // lives in a custom ALC, and without pre-registered dependencies
+                // Roslyn's scripting host loads Rvt.Mcp.dll AGAIN from disk into
+                // its own context — the submission's RvtGlobals then isn't OUR
+                // RvtGlobals (InvalidCastException on the very first call).
                 _state = _state is null
                     ? await CSharpScript
-                        .RunAsync<object?>(submission, _options, _globals, typeof(RvtGlobals), ct)
+                        .Create<object?>(submission, _options, typeof(RvtGlobals), _loader)
+                        .RunAsync(_globals, ct)
                         .ConfigureAwait(false)
                     : await _state
                         .ContinueWithAsync(submission, _options, ct)
@@ -73,6 +82,22 @@ namespace Rvt.Mcp
         {
             _state = null;
             _options = BuildOptions();
+            _loader = BuildLoader();
+        }
+
+        // Map every already-loaded assembly identity to its live instance so
+        // script submissions bind against the running code (one RvtGlobals,
+        // one RevitAPI) instead of fresh disk loads in Roslyn's own context.
+        private static InteractiveAssemblyLoader BuildLoader()
+        {
+            var loader = new InteractiveAssemblyLoader();
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (asm.IsDynamic) continue;
+                try { loader.RegisterDependency(asm); }
+                catch { /* duplicate identity or unregisterable — skip */ }
+            }
+            return loader;
         }
 
         public void Dispose() => Reset();

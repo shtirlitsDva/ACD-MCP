@@ -8,6 +8,10 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
     <!-- RoslynReferences (linked) reads in-memory PE blobs via pointers. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Class libraries do NOT copy NuGet assets to output by default —
+         without this the Roslyn DLLs never reach the deploy folder and the
+         first script call dies with FileNotFoundException inside Revit. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">

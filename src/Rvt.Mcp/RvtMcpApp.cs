@@ -2,7 +2,10 @@ using Autodesk.Revit.UI;
 
 namespace Rvt.Mcp
 {
-    // Add-in entry point. Unlike the AutoCAD plugin (ACDMCP_START command),
+    // Engine entry point — instantiated by Rvt.Mcp.Loader inside the
+    // isolated AssemblyLoadContext (NOT .addin-registered directly; our
+    // Roslyn 4.12 must never meet another add-in's preloaded Roslyn in the
+    // default context). Unlike the AutoCAD plugin (ACDMCP_START command),
     // the pipe starts automatically: Revit has no command line, and the
     // executor only does work when the agent actually sends something.
     //

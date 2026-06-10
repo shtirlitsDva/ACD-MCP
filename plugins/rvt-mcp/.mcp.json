@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "rvt-mcp": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/Rvt.Mcp.Bridge.exe"
+    }
+  }
+}
