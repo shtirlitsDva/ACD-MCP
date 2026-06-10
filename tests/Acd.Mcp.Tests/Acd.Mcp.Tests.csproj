@@ -23,20 +23,20 @@
     reference — same pure-logic compile, no AutoCAD surface needed.
   -->
   <ItemGroup>
-    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoHeader.cs" Link="Sut\DtoHeader.cs" />
-    <Compile Include="..\..\src\Acd.Mcp.Api\Serialization\DtoRegistry.cs" Link="Sut\DtoRegistry.cs" />
-    <Compile Include="..\..\src\Acd.Mcp.Api\Serialization\IDtoProjection.cs" Link="Sut\IDtoProjection.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Serialization\IDtoReloadTrigger.cs" Link="Sut\IDtoReloadTrigger.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoConverterFactory.cs" Link="Sut\DtoConverterFactory.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Serialization\AcadDtoOptions.cs" Link="Sut\AcadDtoOptions.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Serialization\DtoDiagnostics.cs" Link="Sut\DtoDiagnostics.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Scripting\TrailingExpressionRewriter.cs" Link="Sut\TrailingExpressionRewriter.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\ResourceManager.cs" Link="Sut\ResourceManager.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\Serialization\DtoHeader.cs" Link="Sut\DtoHeader.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp.Api\Serialization\DtoRegistry.cs" Link="Sut\DtoRegistry.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp.Api\Serialization\IDtoProjection.cs" Link="Sut\IDtoProjection.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\Serialization\IDtoReloadTrigger.cs" Link="Sut\IDtoReloadTrigger.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\Serialization\DtoConverterFactory.cs" Link="Sut\DtoConverterFactory.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\Serialization\AcadDtoOptions.cs" Link="Sut\AcadDtoOptions.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\Serialization\DtoDiagnostics.cs" Link="Sut\DtoDiagnostics.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\Scripting\TrailingExpressionRewriter.cs" Link="Sut\TrailingExpressionRewriter.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\ResourceManager.cs" Link="Sut\ResourceManager.cs" />
   </ItemGroup>
 
   <!-- Outcome<T> now lives in Acd.Mcp.Batch (pure net8.0 — references safely). -->
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Acd.Mcp.Batch\Acd.Mcp.Batch.csproj" />
+    <ProjectReference Include="..\..\src\Autocad\Acd.Mcp.Batch\Acd.Mcp.Batch.csproj" />
   </ItemGroup>
 
   <ItemGroup>

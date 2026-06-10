@@ -102,7 +102,7 @@ if (-not $SkipBuild) {
     if (Test-Path $repoBinDir) {
         Get-ChildItem $repoBinDir -File | Remove-Item -Force
     }
-    dotnet publish 'src/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj' `
+    dotnet publish 'src/Autocad/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj' `
         -c $Configuration `
         -o $repoBinDir `
         --self-contained false `
@@ -140,7 +140,7 @@ Copy-Item (Join-Path $pluginBundleSrc 'PackageContents.xml') $pluginBundleDst
 $contentsDst = Join-Path $pluginBundleDst 'Contents'
 New-Item -ItemType Directory -Path $contentsDst -Force | Out-Null
 
-$pluginBuildOut = "src/Acd.Mcp/bin/$Configuration"
+$pluginBuildOut = "src/Autocad/Acd.Mcp/bin/$Configuration"
 if (-not (Test-Path $pluginBuildOut)) {
     Fail "Plugin build output not found at $pluginBuildOut. Did dotnet build succeed?"
 }

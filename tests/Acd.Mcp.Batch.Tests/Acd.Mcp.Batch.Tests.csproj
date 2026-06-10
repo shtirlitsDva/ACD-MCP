@@ -15,7 +15,7 @@
     handle on Test→Live, lease-probe failure, cancellation).
   -->
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Acd.Mcp.Batch\Acd.Mcp.Batch.csproj" />
+    <ProjectReference Include="..\..\src\Autocad\Acd.Mcp.Batch\Acd.Mcp.Batch.csproj" />
   </ItemGroup>
 
   <ItemGroup>

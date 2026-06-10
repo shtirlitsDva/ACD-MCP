@@ -34,11 +34,11 @@
   <ItemGroup>
     <!-- AutoCAD-free pieces shared with the AutoCAD plugin via linked
          compile — wire types and Roslyn plumbing are host-agnostic. -->
-    <Compile Include="..\Acd.Mcp\Pipe\Protocol.cs" Link="Shared\Protocol.cs" />
-    <Compile Include="..\Acd.Mcp\ExecuteResult.cs" Link="Shared\ExecuteResult.cs" />
-    <Compile Include="..\Acd.Mcp\Scripting\TrailingExpressionRewriter.cs" Link="Shared\TrailingExpressionRewriter.cs" />
-    <Compile Include="..\Acd.Mcp\Scripting\RoslynReferences.cs" Link="Shared\RoslynReferences.cs" />
-    <Compile Include="..\Acd.Mcp\Scripting\ConsoleCapture.cs" Link="Shared\ConsoleCapture.cs" />
+    <Compile Include="..\..\Autocad\Acd.Mcp\Pipe\Protocol.cs" Link="Shared\Protocol.cs" />
+    <Compile Include="..\..\Autocad\Acd.Mcp\ExecuteResult.cs" Link="Shared\ExecuteResult.cs" />
+    <Compile Include="..\..\Autocad\Acd.Mcp\Scripting\TrailingExpressionRewriter.cs" Link="Shared\TrailingExpressionRewriter.cs" />
+    <Compile Include="..\..\Autocad\Acd.Mcp\Scripting\RoslynReferences.cs" Link="Shared\RoslynReferences.cs" />
+    <Compile Include="..\..\Autocad\Acd.Mcp\Scripting\ConsoleCapture.cs" Link="Shared\ConsoleCapture.cs" />
   </ItemGroup>
 
 </Project>

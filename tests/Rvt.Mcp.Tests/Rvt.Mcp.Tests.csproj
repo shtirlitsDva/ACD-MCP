@@ -39,11 +39,11 @@
   <ItemGroup>
     <!-- SUT files, link-included (repo convention) to keep RevitAPIUI and
          Roslyn out of the test build where possible. -->
-    <Compile Include="..\..\src\Rvt.Mcp\RvtJson.cs" Link="Sut\RvtJson.cs" />
-    <Compile Include="..\..\src\Rvt.Mcp.Bridge\RevitTransport.cs" Link="Sut\RevitTransport.cs" />
-    <Compile Include="..\..\src\Rvt.Mcp.Bridge\RevitDiscovery.cs" Link="Sut\RevitDiscovery.cs" />
-    <Compile Include="..\..\src\Rvt.Mcp.Bridge\RevitPipe.cs" Link="Sut\RevitPipe.cs" />
-    <Compile Include="..\..\src\Acd.Mcp\Pipe\Protocol.cs" Link="Sut\Protocol.cs" />
+    <Compile Include="..\..\src\Revit\Rvt.Mcp\RvtJson.cs" Link="Sut\RvtJson.cs" />
+    <Compile Include="..\..\src\Revit\Rvt.Mcp.Bridge\RevitTransport.cs" Link="Sut\RevitTransport.cs" />
+    <Compile Include="..\..\src\Revit\Rvt.Mcp.Bridge\RevitDiscovery.cs" Link="Sut\RevitDiscovery.cs" />
+    <Compile Include="..\..\src\Revit\Rvt.Mcp.Bridge\RevitPipe.cs" Link="Sut\RevitPipe.cs" />
+    <Compile Include="..\..\src\Autocad\Acd.Mcp\Pipe\Protocol.cs" Link="Sut\Protocol.cs" />
   </ItemGroup>
 
 </Project>

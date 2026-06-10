@@ -28,7 +28,7 @@
     to observe the raw error envelope — V3-G4 diagnose phase used
     exactly this).
 
-  Wire format (per src/Acd.Mcp/Pipe/Protocol.cs):
+  Wire format (per src/Autocad/Acd.Mcp/Pipe/Protocol.cs):
     [4-byte big-endian length][UTF-8 JSON payload]
   JSON-RPC 2.0 frames. JsonOptions: camelCase on PascalCase fields,
   WhenWritingNull ignore, case-insensitive read.

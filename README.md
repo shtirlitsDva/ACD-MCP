@@ -24,7 +24,7 @@ MCP client ─stdio─▶ Acd.Mcp.Bridge.exe ─named pipe─▶ AutoCAD (Acd.Mc
 dotnet build Acd.Mcp.sln -c Release -p:Platform=x64
 ```
 
-Outputs: `src/Acd.Mcp/bin/Release/Acd.Mcp.dll` (load into AutoCAD) and `src/Acd.Mcp.Bridge/bin/Release/Acd.Mcp.Bridge.exe` (register with your MCP client).
+Outputs: `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll` (load into AutoCAD) and `src/Autocad/Acd.Mcp.Bridge/bin/Release/Acd.Mcp.Bridge.exe` (register with your MCP client).
 
 ## How the plugin loads
 
@@ -49,12 +49,12 @@ public class NoAutoCommands { }
 ### NETLOAD (default)
 
 1. `dotnet build Acd.Mcp.sln -c Release -p:Platform=x64`
-2. In AutoCAD: `NETLOAD` → `src/Acd.Mcp/bin/Release/Acd.Mcp.dll`
+2. In AutoCAD: `NETLOAD` → `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll`
 3. `ACDMCP_PING` to verify (the pipe auto-starts on first idle).
 
 ### DevReload / NSLOAD
 
-Build with `-p:IsolatedAlc=true`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Acd.Mcp/Acd.Mcp.csproj`. [NSLOAD](https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD): publish the `FolderProfile` profile (sets `IsolatedAlc=true`, drops the DLL in the catalogue), then load it from the palette.
+Build with `-p:IsolatedAlc=true`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`. [NSLOAD](https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD): publish the `FolderProfile` profile (sets `IsolatedAlc=true`, drops the DLL in the catalogue), then load it from the palette.
 
 ## Install
 

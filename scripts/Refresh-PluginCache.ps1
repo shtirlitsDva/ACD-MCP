@@ -65,7 +65,7 @@ if ($Publish) {
     if (Test-Path $repoBin) {
         Get-ChildItem $repoBin -File | Remove-Item -Force
     }
-    dotnet publish (Join-Path $repoRoot 'src/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj') `
+    dotnet publish (Join-Path $repoRoot 'src/Autocad/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj') `
         -c Release -o $repoBin --self-contained false -p:PublishSingleFile=false
     if ($LASTEXITCODE -ne 0) { Fail "Bridge publish failed" }
     # Drop pdbs from the committed bin/ — Build-Release.ps1 convention.

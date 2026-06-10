@@ -23,8 +23,8 @@
 
   <ItemGroup>
     <!-- Wire-domain types shared with both plugins via linked compile. -->
-    <Compile Include="..\Acd.Mcp\Pipe\Protocol.cs" Link="Pipe\Protocol.cs" />
-    <Compile Include="..\Acd.Mcp\ExecuteResult.cs" Link="ExecuteResult.cs" />
+    <Compile Include="..\..\Autocad\Acd.Mcp\Pipe\Protocol.cs" Link="Pipe\Protocol.cs" />
+    <Compile Include="..\..\Autocad\Acd.Mcp\ExecuteResult.cs" Link="ExecuteResult.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -48,7 +48,7 @@ namespace Acd.Mcp.Tests
             while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Acd.Mcp.sln")))
                 dir = dir.Parent;
             Assert.NotNull(dir);
-            return Path.Combine(dir!.FullName, "src", "Acd.Mcp.Bridge", "Tools");
+            return Path.Combine(dir!.FullName, "src", "Autocad", "Acd.Mcp.Bridge", "Tools");
         }
     }
 }
