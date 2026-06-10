@@ -1,25 +1,29 @@
-# Deploy-RevitAddin.ps1 — build Rvt.Mcp and register it with Revit 2025.
+# Deploy-RevitAddin.ps1 — build Rvt.Mcp (Release) and install it the
+# standard Revit way: binaries copied to
+#   %APPDATA%\Autodesk\Revit\Addins\<year>\Rvt.Mcp\
+# plus a Rvt.Mcp.addin manifest with a RELATIVE assembly path.
 #
-# Writes the .addin manifest into %APPDATA%\Autodesk\Revit\Addins\2025
-# pointing at the repo build output (dev-loop style: rebuild + restart Revit
-# picks up the new DLL; no file copying).
+# Only the Revit-process side lives here. The LLM side (MCP bridge +
+# revit_script_execute tool) installs through the Claude/Codex plugin
+# system (plugins/rvt-mcp); the two halves meet on the rvt-mcp-{pid} pipe.
 #
-# Usage: pwsh scripts\Deploy-RevitAddin.ps1 [-RevitYear 2025] [-Configuration Debug] [-Remove]
+# Usage: pwsh scripts\Deploy-RevitAddin.ps1 [-RevitYear 2025] [-Configuration Release] [-Remove]
 
 param(
     [int]$RevitYear = 2025,
-    [string]$Configuration = 'Debug',
+    [string]$Configuration = 'Release',
     [switch]$Remove
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$manifestDir = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear"
-$manifestPath = Join-Path $manifestDir 'Rvt.Mcp.addin'
+$addinsDir = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$RevitYear"
+$targetDir = Join-Path $addinsDir 'Rvt.Mcp'
+$manifest  = Join-Path $addinsDir 'Rvt.Mcp.addin'
 
 if ($Remove) {
-    if (Test-Path $manifestPath) { Remove-Item $manifestPath; Write-Host "deleted $manifestPath" }
-    else { Write-Host 'nothing to remove' }
+    if (Test-Path $manifest)  { Remove-Item $manifest;                  Write-Host "removed $manifest" }
+    if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force; Write-Host "removed $targetDir" }
     exit 0
 }
 
@@ -33,23 +37,26 @@ $csproj = Join-Path $repoRoot 'src\Revit\Rvt.Mcp.Loader\Rvt.Mcp.Loader.csproj'
 dotnet build $csproj -c $Configuration -p:Platform=x64 --nologo -v q
 if ($LASTEXITCODE -ne 0) { throw 'Rvt.Mcp.Loader build failed' }
 
-$dll = Join-Path $repoRoot "src\Revit\Rvt.Mcp.Loader\bin\$Configuration\Rvt.Mcp.Loader.dll"
-if (-not (Test-Path $dll)) { throw "build output not found: $dll" }
+$buildOut = Join-Path $repoRoot "src\Revit\Rvt.Mcp.Loader\bin\$Configuration"
+if (-not (Test-Path "$buildOut\Rvt.Mcp.Loader.dll")) { throw "build output not found: $buildOut" }
 
-New-Item -ItemType Directory -Force $manifestDir | Out-Null
+if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force }
+New-Item -ItemType Directory -Force $targetDir | Out-Null
+Copy-Item "$buildOut\*" $targetDir -Recurse
+
 @"
 <?xml version="1.0" encoding="utf-8"?>
 <RevitAddIns>
-  <AddIn Type="Application">
-    <Name>Rvt.Mcp</Name>
-    <Assembly>$dll</Assembly>
-    <AddInId>f4ac6a14-27e4-442f-a254-300c83e2b55a</AddInId>
-    <FullClassName>Rvt.Mcp.Loader.LoaderApp</FullClassName>
-    <VendorId>DVRL</VendorId>
-    <VendorDescription>Rvt.Mcp — C# script REPL for agents</VendorDescription>
-  </AddIn>
+    <AddIn Type="Application">
+        <Name>Rvt.Mcp</Name>
+        <Assembly>Rvt.Mcp/Rvt.Mcp.Loader.dll</Assembly>
+        <FullClassName>Rvt.Mcp.Loader.LoaderApp</FullClassName>
+        <AddInId>f4ac6a14-27e4-442f-a254-300c83e2b55a</AddInId>
+        <VendorId>DVRL</VendorId>
+        <VendorDescription>Norsyn, https://github.com/shtirlitsDva/ACD-MCP</VendorDescription>
+    </AddIn>
 </RevitAddIns>
-"@ | Set-Content $manifestPath -Encoding utf8
+"@ | Set-Content $manifest -Encoding utf8
 
-Write-Host "manifest written: $manifestPath"
-Write-Host "assembly: $dll"
+Write-Host "installed -> $targetDir"
+Write-Host "manifest  -> $manifest"
