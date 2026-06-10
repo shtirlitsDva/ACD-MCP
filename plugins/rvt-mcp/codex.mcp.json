@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rvt-mcp": {
+      "command": "./bin/Rvt.Mcp.Bridge.exe",
+      "cwd": "."
+    }
+  }
+}

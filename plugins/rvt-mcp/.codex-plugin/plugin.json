@@ -1,0 +1,19 @@
+{
+  "name": "rvt-mcp",
+  "version": "0.1.0",
+  "description": "Live C# script session inside a running Revit 2025+ process. Drives a persistent CSharpScript session in Revit API context (ExternalEvent), with typed JSON projections for Element/ElementId/XYZ. Deploy the add-in via scripts/Deploy-RevitAddin.ps1 first.",
+  "author": {
+    "name": "Norsyn"
+  },
+  "homepage": "https://github.com/shtirlitsDva/ACD-MCP",
+  "repository": "https://github.com/shtirlitsDva/ACD-MCP",
+  "license": "TBD",
+  "keywords": [
+    "revit",
+    "csharp",
+    "script",
+    "automation",
+    "bim"
+  ],
+  "mcpServers": "./codex.mcp.json"
+}

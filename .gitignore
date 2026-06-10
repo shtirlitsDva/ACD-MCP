@@ -17,6 +17,11 @@ x86/
 !/bin/
 !/bin/**
 
+# Same exception for the per-plugin published bridges (acd-mcp, rvt-mcp):
+# the committed bin/ IS the distributed MCP server.
+!/plugins/*/bin/
+!/plugins/*/bin/**
+
 [Ll]og/
 [Ll]ogs/
 bld/

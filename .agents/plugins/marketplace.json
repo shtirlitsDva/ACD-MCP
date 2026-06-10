@@ -2,7 +2,7 @@
   "name": "acd-mcp",
   "interface": {
     "displayName": "ACD-MCP",
-    "shortDescription": "C# REPL and batch runner inside AutoCAD 2025+."
+    "shortDescription": "C# REPL inside AutoCAD 2025+ and Revit 2025+."
   },
   "plugins": [
     {
@@ -13,6 +13,15 @@
       "description": "Live C# REPL plus multi-file batch runner inside a running AutoCAD 2025+ process.",
       "repository": "https://github.com/shtirlitsDva/ACD-MCP",
       "keywords": ["autocad", "civil-3d", "csharp", "repl", "batch", "automation"]
+    },
+    {
+      "name": "rvt-mcp",
+      "source": { "source": "local", "path": "./plugins/rvt-mcp" },
+      "policy": { "installation": "AVAILABLE" },
+      "category": "Coding",
+      "description": "Live C# REPL inside a running Revit 2025+ process (revit_script_execute).",
+      "repository": "https://github.com/shtirlitsDva/ACD-MCP",
+      "keywords": ["revit", "csharp", "repl", "automation", "bim"]
     }
   ]
 }
