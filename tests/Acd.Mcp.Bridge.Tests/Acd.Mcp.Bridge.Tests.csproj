@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Acd.Mcp.Bridge.Tests</RootNamespace>
+    <Configurations>Debug;Release;IALCD;IALCR</Configurations>
   </PropertyGroup>
 
   <ItemGroup>

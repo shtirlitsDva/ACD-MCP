@@ -36,13 +36,13 @@ using SynchronizationContext = System.Threading.SynchronizationContext;
 //     command registration so AutoCAD's auto-scan finds nothing, leaving the loader's
 //     removable registration as the only one.
 #if ISOLATED_ALC
-[assembly: CommandClass(typeof(Acd.Mcp.NoAutoCommands))]
+[assembly: CommandClass(typeof(Acd.Mcp.NoCommands))]
 #endif
 
 namespace Acd.Mcp
 {
 #if ISOLATED_ALC
-    public class NoAutoCommands { }
+    public class NoCommands { }
 #endif
 
     public class McpPlugin : IExtensionApplication

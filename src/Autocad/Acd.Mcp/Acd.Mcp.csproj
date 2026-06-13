@@ -21,6 +21,7 @@
          Affects only our plugin code — the C# script the user types is
          independently restricted via ScriptOptions.WithAllowUnsafe(false). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Configurations>Debug;Release;IALCD;IALCR</Configurations>
   </PropertyGroup>
 
   <ItemGroup>
@@ -88,9 +89,21 @@
     <DebugType>full</DebugType>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCD|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+    <DefineConstants>$(DefineConstants);ISOLATED_ALC</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCR|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+    <DefineConstants>$(DefineConstants);ISOLATED_ALC</DefineConstants>
   </PropertyGroup>
 
   <!-- "IsolatedALC" build flavour. Set IsolatedAlc=true (the FolderProfile publish
@@ -111,9 +124,7 @@
        the profile and silently ship a markerless DLL to NSLOAD. A Target with
        BeforeTargets="CoreCompile" runs at build time — after the profile import —
        so it catches BOTH the .pubxml form and the -p:IsolatedAlc=true form. -->
-  <Target Name="DefineIsolatedAlcSymbol"
-          BeforeTargets="CoreCompile"
-          Condition="'$(IsolatedAlc)' == 'true'">
+  <Target Name="DefineIsolatedAlcSymbol" BeforeTargets="CoreCompile" Condition="'$(IsolatedAlc)' == 'true'">
     <PropertyGroup>
       <DefineConstants>$(DefineConstants);ISOLATED_ALC</DefineConstants>
     </PropertyGroup>
