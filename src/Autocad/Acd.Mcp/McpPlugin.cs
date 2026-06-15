@@ -48,7 +48,7 @@ namespace Acd.Mcp
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.
-        private const string Version = "v29-get-selection";
+        private const string Version = "v30-async-dto-warmup";
 
         // Static so they survive across DevReload's per-call activator (it creates a
         // fresh McpPlugin instance for each non-static [CommandMethod] call).
@@ -108,6 +108,12 @@ namespace Acd.Mcp
         private static DtoRpcHandler? _dtoRpc;
         private static JsonSerializerOptions? _dtoJsonOptions;
         private static DtoDataProviderApi? _dataProviderApi;
+
+        // Background DTO-compile task kicked from EnsureDtoGraph. Held so
+        // Terminate can wait (bounded) for it before the collectible ALC
+        // unwinds, and so the serializer's gate-based readiness barrier has a
+        // task to observe. Null between cycles.
+        private static Task? _dtoWarmup;
 
         public void Initialize()
         {
@@ -257,6 +263,7 @@ namespace Acd.Mcp
             _dtoRpc = null;
             _dtoJsonOptions = null;
             _dataProviderApi = null;
+            _dtoWarmup = null;
             SafeBoundary.Info("Terminate", $"{Version}");
             SafeBoundary.Run("McpPlugin.Terminate/echo", () => EditorMessage($"[ACD-MCP] Terminate() {Version}"));
         }
@@ -297,6 +304,7 @@ namespace Acd.Mcp
                 _resources!.RegisterAction("listener.Stop", () => _listener?.Stop());
             }
             _listener.Start();
+            SafeBoundary.Info("ACDMCP_START", $"Listening on named pipe '{_listener.PipeName}'.");
             EditorMessage($"[ACD-MCP] Listening on named pipe '{_listener.PipeName}'.");
         });
 
@@ -591,10 +599,38 @@ namespace Acd.Mcp
             _dtoJsonOptions = AcadDtoOptions.Build(_dtoRegistry, reload, _dtoDiagnostics);
             _dtoRpc = new DtoRpcHandler(_dtoDiagnostics);
 
-            _dtoLoader.ReloadAll();
-
-            SafeBoundary.Info("EnsureDtoGraph",
-                $"Registered {_dtoRegistry.RegisteredTypes.Count} DTO types.");
+            // Compiling the ~20 DTO .csx files is the single most expensive
+            // step in plugin start-up: each is a separate Roslyn script
+            // compilation bound against the full AutoCAD/Civil reference set,
+            // and cold that set still costs 20-30s on a fast machine. Run
+            // inline it blocked BOTH the named-pipe listener (which only
+            // starts after TryEnsureCore returns) AND AutoCAD's main thread,
+            // so the user saw a 20-30s "pipe not listening" stall with a
+            // frozen UI.
+            //
+            // Roslyn compilation is pure CPU and touches no document state, so
+            // it is safe off the main thread. Kick it on the threadpool and
+            // let TryEnsureCore return immediately. The registry is a
+            // ConcurrentDictionary, so the serializer reads it safely while it
+            // fills; an entity serialization that lands before warm-up
+            // finishes takes the converter's miss path (NotifyMiss ->
+            // DtoLoader.Refresh), which blocks on the loader's gate that
+            // ReloadAll already holds until the compile completes — a natural
+            // readiness barrier, no extra plumbing. Locals (not the static
+            // fields, which Terminate may null mid-run) are captured so the
+            // task stays well-defined across an ALC unload. The task is
+            // stored so Terminate can observe it before the ALC unwinds.
+            var loader = _dtoLoader;
+            var registry = _dtoRegistry;
+            _dtoWarmup = Task.Run(() => SafeBoundary.Run("EnsureDtoGraph/warmup", () =>
+            {
+                var sw = Stopwatch.StartNew();
+                loader.ReloadAll();
+                SafeBoundary.Info("EnsureDtoGraph",
+                    $"Registered {registry.RegisteredTypes.Count} DTO types in {sw.ElapsedMilliseconds} ms.");
+            }));
+            _resources!.RegisterAction("dtoWarmup.wait",
+                () => _dtoWarmup?.Wait(TimeSpan.FromSeconds(2)));
         }
 
         private static void EditorMessage(string msg)
