@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -25,6 +26,13 @@ namespace Acd.Mcp.Serialization
                 PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
                 WriteIndented = false,
+                // This JSON is read by an agent over a JSON-RPC byte stream, not
+                // embedded in HTML. The default HTML-safe encoder needlessly
+                // escapes '<' '>' '&' '+' backtick and all non-ASCII as \uXXXX
+                // (e.g. a generic type name `Dictionary`2` came back as
+                // `Dictionary`2`). Relax it so those characters emit
+                // literally. Only '"' '\' and control chars are still escaped.
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
                 // AutoCAD geometry can legitimately yield Infinity / NaN
                 // (degenerate Distance, divide-by-zero in derived formulas).
                 // The default JSON behaviour throws on those values, which

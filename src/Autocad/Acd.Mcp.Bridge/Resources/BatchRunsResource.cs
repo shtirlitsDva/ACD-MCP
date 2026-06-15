@@ -84,6 +84,6 @@ namespace Acd.Mcp.Bridge.Resources
         }
 
         private static string PrettyPrint(JsonElement el) =>
-            JsonSerializer.Serialize(el, new JsonSerializerOptions { WriteIndented = true });
+            JsonSerializer.Serialize(el, ResourceJson.Indented);
     }
 }

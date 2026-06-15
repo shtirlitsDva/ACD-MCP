@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -64,6 +65,10 @@ namespace Acd.Mcp.Pipe
             PropertyNameCaseInsensitive = true,
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             WriteIndented = false,
+            // JSON-RPC byte stream, not HTML — relax the default HTML-safe
+            // encoder so '<' '>' '&' backtick and non-ASCII go over the wire
+            // literally instead of as \uXXXX. (Shared by plugin + bridge.)
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         };
 
         // Returns null on clean disconnect before a new frame starts.

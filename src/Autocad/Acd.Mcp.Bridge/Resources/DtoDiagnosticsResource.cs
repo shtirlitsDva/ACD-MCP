@@ -38,7 +38,7 @@ namespace Acd.Mcp.Bridge.Resources
         public async Task<string> GetAsync(CancellationToken ct = default)
         {
             var json = await _client.CallRawAsync("dto.diagnostics", new { }, ct: ct).ConfigureAwait(false);
-            return JsonSerializer.Serialize(json, new JsonSerializerOptions { WriteIndented = true });
+            return JsonSerializer.Serialize(json, ResourceJson.Indented);
         }
     }
 }

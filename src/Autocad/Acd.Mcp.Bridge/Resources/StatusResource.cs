@@ -38,7 +38,7 @@ namespace Acd.Mcp.Bridge.Resources
             try
             {
                 var json = await _client.CallRawAsync("acdmcp.status", new { }, ct: ct).ConfigureAwait(false);
-                return JsonSerializer.Serialize(json, new JsonSerializerOptions { WriteIndented = true });
+                return JsonSerializer.Serialize(json, ResourceJson.Indented);
             }
             catch (AcadTransportException ex)
             {
@@ -53,7 +53,7 @@ namespace Acd.Mcp.Bridge.Resources
                     pipe = "<unreachable>",
                     transport_error = new { code = ex.ErrorCode, message = ex.Message },
                 };
-                return JsonSerializer.Serialize(fallback, new JsonSerializerOptions { WriteIndented = true });
+                return JsonSerializer.Serialize(fallback, ResourceJson.Indented);
             }
         }
     }
