@@ -35,9 +35,10 @@ namespace Acd.Mcp.Bridge
         public async Task<ExecuteResult> ExecuteAsync(
             string code,
             int? timeoutMs,
+            int? pid = null,
             CancellationToken ct = default)
         {
-            var response = await SendAsync("execute", new { code, timeout_ms = timeoutMs }, ct)
+            var response = await SendAsync("execute", new { code, timeout_ms = timeoutMs }, pid, ct)
                 .ConfigureAwait(false);
 
             return DecodeResult<ExecuteResult>(response)
@@ -49,9 +50,9 @@ namespace Acd.Mcp.Bridge
         // Generic typed call for non-execute methods (batch.*, ping, etc.).
         // Tools / resources use this to invoke the plugin's RPC surface and
         // get a typed result back.
-        public async Task<T> CallAsync<T>(string method, object? @params, CancellationToken ct = default)
+        public async Task<T> CallAsync<T>(string method, object? @params, int? pid = null, CancellationToken ct = default)
         {
-            var response = await SendAsync(method, @params, ct).ConfigureAwait(false);
+            var response = await SendAsync(method, @params, pid, ct).ConfigureAwait(false);
             return DecodeResult<T>(response)
                 ?? throw new AcadTransportException(
                     AcadTransportFailure.PipeBroken,
@@ -60,9 +61,9 @@ namespace Acd.Mcp.Bridge
 
         // Raw call — returns the JsonElement result for callers that want
         // to format their own response (MCP resources returning JSON text).
-        public async Task<JsonElement> CallRawAsync(string method, object? @params, CancellationToken ct = default)
+        public async Task<JsonElement> CallRawAsync(string method, object? @params, int? pid = null, CancellationToken ct = default)
         {
-            var response = await SendAsync(method, @params, ct).ConfigureAwait(false);
+            var response = await SendAsync(method, @params, pid, ct).ConfigureAwait(false);
             if (response.Error is { } err) throw new AcadRpcException(err.Code, err.Message);
             if (response.Result is JsonElement el) return el;
             throw new AcadTransportException(
@@ -75,9 +76,12 @@ namespace Acd.Mcp.Bridge
         // attempt's deadline, and on success do the one-shot request/
         // response. AcadTransportException with transient reasons triggers
         // another iteration; everything else propagates.
-        private async Task<JsonRpcResponse> SendAsync(string method, object? @params, CancellationToken ct)
+        private async Task<JsonRpcResponse> SendAsync(string method, object? @params, int? requestPid, CancellationToken ct)
         {
             AcadTransportException? lastTransient = null;
+            // A per-call pid takes precedence over the bridge-wide --pid, so one
+            // bridge can drive several instances by passing pid per tool call.
+            int? targetPid = requestPid ?? _explicitPid;
 
             for (int attempt = 0; attempt < _retry.AttemptTimeoutsMs.Count; attempt++)
             {
@@ -86,7 +90,7 @@ namespace Acd.Mcp.Bridge
                 PidResolution resolution;
                 try
                 {
-                    resolution = await _discovery.ResolveAsync(_explicitPid, ct).ConfigureAwait(false);
+                    resolution = await _discovery.ResolveAsync(targetPid, ct).ConfigureAwait(false);
                 }
                 catch (AcadTransportException ex) when (IsRetryable(ex))
                 {

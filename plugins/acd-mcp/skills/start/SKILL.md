@@ -9,7 +9,11 @@ when_to_use: User mentions AutoCAD, Civil 3D, the live script REPL inside AutoCA
 
 Architecture: a stdio bridge (`Acd.Mcp.Bridge.exe`, run by the MCP client) talks over a named pipe to a plugin (`Acd.Mcp.dll`) loaded inside AutoCAD. Each script call compiles via Roslyn `CSharpScript`, runs on AutoCAD's main thread under `Doc.LockDocument()`, and returns. State persists between calls. Batch runs iterate `Database` objects loaded side-band — no active document.
 
-The user clicks `ACDMCP_START` (or it's autoloaded) to open the pipe. The user opens `ACDMCP_PALETTE` to get the in-AutoCAD SCRIPT/BATCH tabs. **You cannot start either; you can only check via the MCP tools whether they're running.**
+The user clicks `ACDMCP_START` (or it's autoloaded) to open the pipe. The user opens `ACDMCP_PALETTE` to get the in-AutoCAD SCRIPT/BATCH tabs. Outside a DevReload setup you cannot open the palette yourself; you can only check via the MCP tools whether it's running.
+
+**With DevReload present (the agentic-dev setup), you bring ACD-MCP up yourself:** `devreload_load_plugin("Acd.Mcp", pid=…)` loads `Acd.Mcp.dll` into that AutoCAD and its `acd-mcp-<pid>` pipe comes up on the next idle — your first `autocad_script_execute` may return `[PIPE_NOT_LISTENING]`; retry once and it connects.
+
+**Multiple AutoCAD instances:** every tool takes an optional `pid` — pass it to target a specific instance, e.g. `autocad_script_execute(code, pid=65072)`. Omit `pid` when only one instance has `Acd.Mcp` loaded (the bridge finds it). With two or more loaded and no `pid`, the bridge can't guess and returns `MULTIPLE_AUTOCAD_PLUGINS` — pass `pid` to resolve. Get pids from DevReload's `acad_list_instances`.
 </what-this-plugin-is>
 
 <two-modes>
@@ -48,9 +52,10 @@ On first use in a session, sanity-check the surface:
    * The bridge auto-retries connect (200 / 800 / 2000 ms) so a brief AutoCAD restart window is invisible.
    * Failure shape: `success: false` with `stderr` starting with a bracketed error_code, e.g. `[PIPE_NOT_LISTENING]`, `[NO_AUTOCAD_FOUND]`, `[AMBIGUOUS_AUTOCADS]`, `[MULTIPLE_AUTOCAD_PLUGINS]`. Read the code, then read the `acd-mcp://status` resource for the full snapshot.
    * Resolution by code:
-     * `NO_AUTOCAD_FOUND` → user starts AutoCAD. Plugin auto-starts on first idle (Release builds too, as of fragility-fix v2). User can opt out via `%LOCALAPPDATA%\Acd.Mcp\config.json` `{ "auto_start": false }` and run `ACDMCP_START` manually.
-     * `PIPE_NOT_LISTENING` → wait a few seconds and retry once; the listener may still be coming up. If it persists, ask the user to run `ACDMCP_START`.
-     * `AMBIGUOUS_AUTOCADS` / `MULTIPLE_AUTOCAD_PLUGINS` → ask the user to disambiguate via the bridge's `--pid` flag in the MCP config.
+     * `NO_AUTOCAD_FOUND` → with DevReload: `acad_start` then `devreload_load_plugin("Acd.Mcp", pid=…)`. Otherwise the user starts AutoCAD (the plugin auto-starts on first idle; opt out via `%LOCALAPPDATA%\Acd.Mcp\config.json` `{ "auto_start": false }` + `ACDMCP_START`).
+     * `PIPE_NOT_LISTENING` → wait a few seconds and retry once; the listener may still be coming up (expected right after `devreload_load_plugin("Acd.Mcp")`). If it persists without DevReload, ask the user to run `ACDMCP_START`.
+     * `AMBIGUOUS_AUTOCADS` → multiple AutoCADs running, none with the acd-mcp pipe up yet; wait a moment and retry.
+     * `MULTIPLE_AUTOCAD_PLUGINS` → two or more instances have `Acd.Mcp` loaded; pass an explicit `pid` to the tool to pick one (pids from DevReload's `acad_list_instances`). The bridge's `--pid` flag still sets a session-wide default.
 
 2. **Palette up?** No longer a hard prerequisite — `autocad_script_propose` and `autocad_batch_propose_script` auto-open the palette on call (fragility-fix v2). The only handlers that still require an open palette are the BATCH selection readers (`autocad_batch_list_files`, `autocad_batch_run_test` — both surface `error_code: "PALETTE_CLOSED"` when the palette is shut). The agent's response: ask the user to open the palette, set folder + mask, then retry. The bridge never throws for any of these cases (V2-G4): always read `result.ok` first, then `error_code` / `error_message` on failure.
 

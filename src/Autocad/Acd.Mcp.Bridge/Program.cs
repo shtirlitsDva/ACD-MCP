@@ -1,7 +1,10 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Acd.Mcp.Bridge;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 
 int? explicitPid = ParseExplicitPid(args);
 
@@ -12,11 +15,20 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
+// The stdio channel is a JSON-RPC byte stream, not an HTML document. Relax the
+// default HTML-safe encoder so '<', '>', '&' and quotes in tool results (script
+// output, drawing names, generic type names, XML) emit literally instead of as
+// <-style escapes.
+var serializerOptions = new JsonSerializerOptions(McpJsonUtilities.DefaultOptions)
+{
+    Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+};
+
 builder.Services.AddSingleton(new AcadClient(explicitPid));
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly()
+    .WithToolsFromAssembly(serializerOptions: serializerOptions)
     .WithResourcesFromAssembly();
 
 await builder.Build().RunAsync();

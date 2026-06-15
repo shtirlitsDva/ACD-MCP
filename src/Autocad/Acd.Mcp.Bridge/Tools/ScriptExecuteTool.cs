@@ -33,11 +33,13 @@ namespace Acd.Mcp.Bridge.Tools
             string code,
             [Description("Optional cooperative timeout in milliseconds. A snippet that spins without observing its CancellationToken cannot be interrupted.")]
             int? timeout_ms = null,
+            [Description("Optional AutoCAD process id to target. Omit when one instance has the plugin; pass it to pick one when several instances each have Acd.Mcp loaded.")]
+            int? pid = null,
             CancellationToken ct = default)
         {
             try
             {
-                return await _client.ExecuteAsync(code, timeout_ms, ct).ConfigureAwait(false);
+                return await _client.ExecuteAsync(code, timeout_ms, pid, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

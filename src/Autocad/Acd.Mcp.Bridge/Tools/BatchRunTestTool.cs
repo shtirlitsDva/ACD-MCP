@@ -49,12 +49,14 @@ namespace Acd.Mcp.Bridge.Tools
         public async Task<BatchRunStartedResult> RunTestAsync(
             [Description("Optional. Saved-script name to load into the editor and run. If omitted, runs whatever the BATCH editor buffer currently holds (the path autocad_batch_propose_script just populated).")]
             string? name = null,
+            [Description("Optional AutoCAD process id to target. Omit when one instance has the plugin; pass it to pick one when several instances each have Acd.Mcp loaded.")]
+            int? pid = null,
             CancellationToken ct = default)
         {
             try
             {
                 var p = await _client.CallAsync<BatchRunStartedPayload>("batch.runTest",
-                    new { name }, ct).ConfigureAwait(false);
+                    new { name }, pid, ct).ConfigureAwait(false);
                 return new BatchRunStartedResult(
                     ok: true, error_code: null, error_message: null,
                     p.run_id, p.pending, p.results_resource, p.note);

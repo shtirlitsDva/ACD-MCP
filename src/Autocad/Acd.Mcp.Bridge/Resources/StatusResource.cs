@@ -37,7 +37,7 @@ namespace Acd.Mcp.Bridge.Resources
         {
             try
             {
-                var json = await _client.CallRawAsync("acdmcp.status", new { }, ct).ConfigureAwait(false);
+                var json = await _client.CallRawAsync("acdmcp.status", new { }, ct: ct).ConfigureAwait(false);
                 return JsonSerializer.Serialize(json, new JsonSerializerOptions { WriteIndented = true });
             }
             catch (AcadTransportException ex)

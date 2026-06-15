@@ -42,12 +42,15 @@ namespace Acd.Mcp.Bridge.Tools
             "the right folder + mask before kicking off a Test run. The agent cannot change the file list — " +
             "only the user can, via the palette UI. If the user instead pasted explicit paths into the " +
             "conversation, prefer those and tell the user to match the folder + mask in the palette.")]
-        public async Task<BatchFilesResult> ListFilesAsync(CancellationToken ct = default)
+        public async Task<BatchFilesResult> ListFilesAsync(
+            [Description("Optional AutoCAD process id to target. Omit when one instance has the plugin; pass it to pick one when several instances each have Acd.Mcp loaded.")]
+            int? pid = null,
+            CancellationToken ct = default)
         {
             try
             {
                 var p = await _client.CallAsync<BatchFilesPayload>("batch.listFiles",
-                    @params: null, ct).ConfigureAwait(false);
+                    null, pid, ct).ConfigureAwait(false);
                 return new BatchFilesResult(
                     ok: true, error_code: null, error_message: null,
                     p.folder, p.mask, p.recurse, p.files, p.count);

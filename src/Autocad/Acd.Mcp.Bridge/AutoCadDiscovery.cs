@@ -65,8 +65,7 @@ namespace Acd.Mcp.Bridge
             {
                 throw new AcadTransportException(
                     AcadTransportFailure.NoAutoCadFound,
-                    "No AutoCAD instance found. Start AutoCAD and load the Acd.Mcp plugin, " +
-                    "or pass --pid <PID> explicitly.");
+                    "No AutoCAD instance found. Start AutoCAD and load the Acd.Mcp plugin.");
             }
 
             if (pids.Length == 1)
@@ -95,11 +94,11 @@ namespace Acd.Mcp.Bridge
                         AcadTransportFailure.AmbiguousAutoCads,
                         $"Multiple AutoCAD instances found (PIDs: {string.Join(", ", pids)}) " +
                         "but none has the Acd.Mcp plugin pipe listening. " +
-                        "Run ACDMCP_START in the target AutoCAD, or pass --pid <PID>."),
+                        "Run ACDMCP_START in the target AutoCAD, or load Acd.Mcp into it via DevReload."),
                 _ => throw new AcadTransportException(
                         AcadTransportFailure.MultipleAutoCadPlugins,
                         $"Multiple AutoCAD instances with the Acd.Mcp plugin found (PIDs: {string.Join(", ", listeners)}). " +
-                        "Pass --pid <PID> to pick one."),
+                        "Set the pid argument to the process id you want."),
             };
         }
 

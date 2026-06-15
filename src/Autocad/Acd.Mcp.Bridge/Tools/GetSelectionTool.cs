@@ -46,12 +46,15 @@ namespace Acd.Mcp.Bridge.Tools
             "when no drawing is open. " +
             "Call this when the user says 'look at the selected entity' or similar — much faster than " +
             "asking them to LIST and paste the handle.")]
-        public async Task<GetSelectionResult> GetSelectionAsync(CancellationToken ct = default)
+        public async Task<GetSelectionResult> GetSelectionAsync(
+            [Description("Optional AutoCAD process id to target. Omit when one instance has the plugin; pass it to pick one when several instances each have Acd.Mcp loaded.")]
+            int? pid = null,
+            CancellationToken ct = default)
         {
             try
             {
                 var p = await _client.CallAsync<GetSelectionPayload>("script.getSelection",
-                    @params: null, ct).ConfigureAwait(false);
+                    null, pid, ct).ConfigureAwait(false);
                 return new GetSelectionResult(
                     ok: true, error_code: null, error_message: null,
                     p.document_name, p.document_path, p.count, p.entities);

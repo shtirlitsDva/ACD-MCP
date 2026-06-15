@@ -57,12 +57,14 @@ namespace Acd.Mcp.Bridge.Tools
             string script_body,
             [Description("Optional one-line summary, surfaced in the Manage Scripts window.")]
             string? input_summary = null,
+            [Description("Optional AutoCAD process id to target. Omit when one instance has the plugin; pass it to pick one when several instances each have Acd.Mcp loaded.")]
+            int? pid = null,
             CancellationToken ct = default)
         {
             try
             {
                 return await _client.CallAsync<ProposeScriptResult>("script.proposeScript",
-                    new { name, script_body, input_summary }, ct).ConfigureAwait(false);
+                    new { name, script_body, input_summary }, pid, ct).ConfigureAwait(false);
             }
             catch (AcadRpcException ex)
             {

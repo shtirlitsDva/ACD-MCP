@@ -15,9 +15,11 @@ when_to_use: User wants to inspect, modify, or report on the drawing currently o
 <what-this-skill-is-for>
 This skill is the full reference for the **single-drawing C# script surface** of the ACD-MCP plugin. Two MCP tools live here:
 
-1. **`autocad_script_execute(code, timeout_ms?)`** — runs the snippet immediately against the active drawing. Returns the result. Does NOT touch the palette editor. The user doesn't see the script unless they look at the execution log. This is the default for everything: information gathering, one-shot edits, anything the user hasn't asked to review.
+1. **`autocad_script_execute(code, timeout_ms?, pid?)`** — runs the snippet immediately against the active drawing. Returns the result. Does NOT touch the palette editor. The user doesn't see the script unless they look at the execution log. This is the default for everything: information gathering, one-shot edits, anything the user hasn't asked to review.
 
-2. **`autocad_script_propose(name, script_body, input_summary?)`** — saves the script to `%APPDATA%\Acd.Mcp\scripts\script\<name>.csx` AND stages it in the SCRIPT palette editor for the user. The user reviews, edits if they want, then clicks Run. The script is also kept on disk so the user can re-load it later via the Manage Scripts window.
+2. **`autocad_script_propose(name, script_body, input_summary?, pid?)`** — saves the script to `%APPDATA%\Acd.Mcp\scripts\script\<name>.csx` AND stages it in the SCRIPT palette editor for the user. The user reviews, edits if they want, then clicks Run. The script is also kept on disk so the user can re-load it later via the Manage Scripts window.
+
+**`pid`** targets a specific AutoCAD instance when several have `Acd.Mcp` loaded — omit it when only one does. See `/acd-mcp:start`.
 
 The two tracks are independent. You can run direct-execute queries to gather information (layer names, object types, …) **while** a proposed script sits in the editor waiting for the user — direct execute does not touch the editor, so the user's review is undisturbed.
 </what-this-skill-is-for>

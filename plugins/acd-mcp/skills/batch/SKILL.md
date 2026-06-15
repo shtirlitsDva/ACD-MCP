@@ -18,6 +18,8 @@ A two-stage workflow for autonomous batch edits across many AutoCAD drawings:
 2. **Hand off** — once Test is clean across every file, tell the user the script is safe to execute. The user flips the slide-switch from Test to Live in the BATCH palette and clicks Run. The runtime auto-runs the Test pass again first; only if every file passes does the Live pass actually commit + save.
 
 **Live execution is ALWAYS the user's click.** There is no `autocad_batch_run_live` tool. Don't ask, don't try.
+
+Every `autocad_batch_*` tool takes an optional `pid` (last argument) to target a specific AutoCAD instance when several have `Acd.Mcp` loaded; omit it when only one does. See `/acd-mcp:start`.
 </what-this-skill-is-for>
 
 <response-shape>

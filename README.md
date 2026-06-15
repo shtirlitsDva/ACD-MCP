@@ -9,7 +9,7 @@ MCP client ─stdio─▶ Acd.Mcp.Bridge.exe ─named pipe─▶ AutoCAD (Acd.Mc
 ```
 
 * **`Acd.Mcp`** — AutoCAD plugin (`net8.0-windows8.0`, x64). Hosts the pipe server (`acd-mcp-{pid}`) and runs each request on the UI thread under `LockDocument()` through a persistent `CSharpScript` session.
-* **`Acd.Mcp.Bridge`** — stdio MCP server (`net8.0`). Translates MCP calls to JSON-RPC over the pipe. Auto-discovers AutoCAD; pass `--pid <N>` to disambiguate multiple instances.
+* **`Acd.Mcp.Bridge`** — stdio MCP server (`net8.0`). Translates MCP calls to JSON-RPC over the pipe. Auto-discovers AutoCAD when one instance has the plugin loaded. To target a specific instance when several do, pass an optional `pid` on any tool call (per-call), or `--pid <N>` on the Bridge command line (session-wide default). See [Targeting an instance](#targeting-an-instance).
 
 ## Requirements
 
@@ -35,12 +35,12 @@ Two build flavours, switched by one compiler symbol (`ISOLATED_ALC`, off by defa
 | **Netload** *(default)* | `dotnet build -c Release` | `NETLOAD`, or the `.bundle` autoload |
 | **IsolatedALC** | `-p:IsolatedAlc=true` (or the `FolderProfile` publish profile) | DevReload / NSLOAD |
 
-The marker is an empty `[assembly: CommandClass(NoAutoCommands)]` that stops AutoCAD's `ExtensionLoader` from auto-registering commands. DevReload/NSLOAD byte-load the DLL and register commands themselves via the removable `Utils.AddCommand`, so the marker must be **present** there or the second reload throws `eDuplicateKey`. With `NETLOAD`/`.bundle`, AutoCAD is the only registrar, so it must be **absent** or no commands appear. Gated in `McpPlugin.cs`:
+The marker is an empty `[assembly: CommandClass(NoCommands)]` that stops AutoCAD's `ExtensionLoader` from auto-registering commands. DevReload/NSLOAD byte-load the DLL and register commands themselves via the removable `Utils.AddCommand`, so the marker must be **present** there or the second reload throws `eDuplicateKey`. With `NETLOAD`/`.bundle`, AutoCAD is the only registrar, so it must be **absent** or no commands appear. Gated in `McpPlugin.cs`:
 
 ```csharp
 #if ISOLATED_ALC
-[assembly: CommandClass(typeof(Acd.Mcp.NoAutoCommands))]
-public class NoAutoCommands { }
+[assembly: CommandClass(typeof(Acd.Mcp.NoCommands))]
+public class NoCommands { }
 #endif
 ```
 
@@ -133,15 +133,16 @@ The palette shares its script session with the MCP, so a `var` typed in the pale
 
 ## MCP surface
 
-Five tools, four resources.
+Six tools, five resources. Every tool takes an optional **`pid`** (the AutoCAD process id) as its last argument — see [Targeting an instance](#targeting-an-instance).
 
 ### Tools
 
-* **`autocad_script_execute(code, timeout_ms?)`** — run C# on the main thread under a doc lock. Globals: `Doc`, `Db`, `Ed`, `CivilDoc` (null in non-Civil drawings), `Acd`. Default imports cover `System`, LINQ, IO, Text and `Autodesk.AutoCAD.*`; add `using Autodesk.Civil.DatabaseServices;` yourself when needed. Declarations persist. Returns `ExecuteResult` (`success`, `return_value_repr`, `return_value_json`, `diagnostics`, `stdout`, `stderr`, `elapsed_ms`).
-* **`autocad_script_propose(name, body, input_summary?)`** — stage a single-drawing script in the SCRIPT palette for review.
-* **`autocad_batch_propose_script(name, body, input_summary?)`** — save + load a batch script into the BATCH palette.
-* **`autocad_batch_run_test(name?)`** — TEST-run the batch script over the selected folder/mask; opens each drawing read-shared and rolls back. There is no live-run tool — the user runs Live in person.
-* **`autocad_batch_get_selection()`** — return the current folder, mask, recurse flag, and file list.
+* **`autocad_script_execute(code, timeout_ms?, pid?)`** — run C# on the main thread under a doc lock. Globals: `Doc`, `Db`, `Ed`, `CivilDoc` (null in non-Civil drawings), `Acd`. Default imports cover `System`, LINQ, IO, Text and `Autodesk.AutoCAD.*`; add `using Autodesk.Civil.DatabaseServices;` yourself when needed. Declarations persist. Returns `ExecuteResult` (`success`, `return_value_repr`, `return_value_json`, `diagnostics`, `stdout`, `stderr`, `elapsed_ms`).
+* **`autocad_script_propose(name, script_body, input_summary?, pid?)`** — stage a single-drawing script in the SCRIPT palette for review.
+* **`autocad_batch_propose_script(name, script_body, input_summary?, pid?)`** — save + load a batch script into the BATCH palette.
+* **`autocad_batch_run_test(name?, pid?)`** — TEST-run the batch script over the selected folder/mask; opens each drawing read-shared and rolls back. There is no live-run tool — the user runs Live in person.
+* **`autocad_batch_list_files(pid?)`** — return the BATCH palette's current folder, mask, recurse flag, and matched file list.
+* **`autocad_get_selection(pid?)`** — return the active drawing's pickfirst selection (`document_name`, `document_path`, `count`, `entities[]`).
 
 All tools except `autocad_script_execute` return a discriminated shape — check `ok` first; on failure read `error_message`. `autocad_script_execute` returns `ExecuteResult` directly (compile errors in `diagnostics`, runtime errors in `stderr`).
 
@@ -151,11 +152,18 @@ All tools except `autocad_script_execute` return a discriminated shape — check
 * `acd-mcp://batch-runs/{run_id}` — per-file result of one run.
 * `acd-mcp://batch-runs/last` — most recent run.
 * `acd-mcp://dto-system/diagnostics` — DTO files that failed to compile.
+* `acd-mcp://status` — live capability snapshot (pipe/palette state, per-tool ready/degraded + error codes); read it when a tool returns a transport error.
+
+### Targeting an instance
+
+With a single AutoCAD that has `Acd.Mcp` loaded, omit `pid` — the Bridge finds it. With two or more loaded, pass `pid` (the AutoCAD process id) on the tool call to pick one; otherwise the Bridge returns error code `MULTIPLE_AUTOCAD_PLUGINS`. The `--pid <N>` Bridge CLI flag sets a session-wide default that a per-call `pid` overrides.
+
+Transport error codes (surfaced in the failure shape / `stderr` and in the `acd-mcp://status` resource): `NO_AUTOCAD_FOUND`, `PIPE_NOT_LISTENING`, `AMBIGUOUS_AUTOCADS`, `MULTIPLE_AUTOCAD_PLUGINS`, `PINNED_PID_GONE`, `PIPE_BROKEN`.
 
 ## Limitations
 
 * The snippet blocks AutoCAD's main thread. `timeout_ms` cancels at the next `CancellationToken` check; a spin loop can't be interrupted without killing AutoCAD.
-* No sandbox — arbitrary C# runs in-process. Trusted-developer tool. The pipe's ACL restricts access to the current user.
+* No sandbox — arbitrary C# runs in-process. Trusted-developer tool. The pipe relies on the default Windows named-pipe ACL (no custom ACL is set).
 * Roslyn-emitted assemblies accumulate; `ACDMCP_RESET` drops session state, an AutoCAD restart frees the memory.
 * Modal AutoCAD dialogs block the pipe until closed.
 

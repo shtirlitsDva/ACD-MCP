@@ -43,7 +43,7 @@ namespace Acd.Mcp.Bridge.Resources
             CancellationToken ct = default)
         {
             var json = await _client.CallRawAsync("batch.listRuns",
-                new { limit, offset }, ct).ConfigureAwait(false);
+                new { limit, offset }, ct: ct).ConfigureAwait(false);
             return PrettyPrint(json);
         }
 
@@ -66,7 +66,7 @@ namespace Acd.Mcp.Bridge.Resources
             if (string.Equals(run_id, "last", System.StringComparison.OrdinalIgnoreCase))
                 return await LastAsync(ct).ConfigureAwait(false);
 
-            var json = await _client.CallRawAsync("batch.getRun", new { run_id }, ct).ConfigureAwait(false);
+            var json = await _client.CallRawAsync("batch.getRun", new { run_id }, ct: ct).ConfigureAwait(false);
             return PrettyPrint(json);
         }
 
@@ -79,7 +79,7 @@ namespace Acd.Mcp.Bridge.Resources
             "to enumerate /recent just to read the freshest entry.")]
         public async Task<string> LastAsync(CancellationToken ct = default)
         {
-            var json = await _client.CallRawAsync("batch.getLastRun", new { }, ct).ConfigureAwait(false);
+            var json = await _client.CallRawAsync("batch.getLastRun", new { }, ct: ct).ConfigureAwait(false);
             return PrettyPrint(json);
         }
 
