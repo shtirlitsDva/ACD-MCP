@@ -109,7 +109,7 @@ The source of truth is the system DTO folder `%LOCALAPPDATA%\Acd.Mcp\dto-system\
 
 * **For block attributes / PropertySets, use `Acd.DataProvider.ReadAll(entity)`** — returns `IReadOnlyDictionary<string, string>` with the union of every registered metadata mechanism. Reading any one mechanism by hand misses the others for users who store metadata differently than you assumed. On vanilla AutoCAD the union is block-attributes-only; on Civil 3D / Map / MEP it also includes PropertySets. XData is intentionally not in the composite yet — track the issue rather than reading it by hand.
 * **When you see `{"$unsupported":"Autodesk.XXX.YYY"}`** — that's the signal to write a DTO. Hand the type to `/acd-mcp:add-dto`. The factory claims every `Autodesk.*` type, so anything in that namespace without a DTO surfaces the marker.
-* **When you see `{"$serialization_error":"..."}`** — the value couldn't be serialised (commonly: a return reference whose owning Transaction has been disposed). Re-run the snippet so the value is freshly built inside the active transaction, or project to primitives at the leaf.
+* **When you see `{"$serialization_error":"..."}`** — the value genuinely couldn't be serialised (e.g. an entity that was erased, or a property that throws when read). Entity metadata no longer needs your transaction to still be open — the serializer opens its own short-lived transaction for that — so this marker is now rare. If you hit it, re-run so the value is freshly built, or project to primitives at the leaf.
 
 The serializer applies `JsonNamingPolicy.SnakeCaseLower` to property names. Either Pascal or snake_case in the projection is fine — they normalize.
 

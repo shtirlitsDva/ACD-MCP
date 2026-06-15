@@ -109,7 +109,7 @@ attributes = Acd.DataProvider.ReadAll(br)
 
 Why: a user who stores `PartNumber` in block attributes vs PropertySets vs XData should get the same DTO output. Reading one mechanism by hand misses the others. The composite data provider checks every registered mechanism and returns the union.
 
-`Acd.DataProvider.ReadAll(entity)` returns `IReadOnlyDictionary<string, string>`. `Acd.DataProvider.TryRead(entity, key)` returns a single value or null. Both pull the current top transaction from the entity's database; if no transaction is active, they throw — make sure your script is inside a transaction when entity DTO is serialised.
+`Acd.DataProvider.ReadAll(entity)` returns `IReadOnlyDictionary<string, string>`. `Acd.DataProvider.TryRead(entity, key)` returns a single value or null. Both use the entity's active top transaction when one is open, and otherwise open a short-lived transaction just for the read. So a DTO serialises correctly whether or not your script's own transaction is still open — the standard block-form `using` closes your transaction *before* the return value is serialised, and the data provider handles that for you.
 
 **What the composite contains depends on the vertical:**
 

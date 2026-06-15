@@ -23,9 +23,16 @@ namespace Acd.Mcp.Serialization
     // resolve keeps DTOs terse and lines up with how AutoCAD scripts already
     // think about "the current transaction".
     //
-    // If a projection runs outside any transaction, we throw. Returning empty
-    // would be a worse failure mode — the agent would silently get a JSON
-    // shape with no metadata and not know why.
+    // Transaction resolution: if the caller already has an open transaction
+    // (the script is still inside its `using (tx) { ... }`, or BATCH's xTx is
+    // live), we reuse it. If NOT — the common case when serializing an entity
+    // the script returned, because DTO projection runs *after* the script's
+    // own transaction has closed — we open a short-lived OpenCloseTransaction
+    // just for the read and dispose it immediately. The returned entity stays
+    // readable (closed-but-pinned), and the metadata sub-objects (block
+    // attributes, property sets) are re-opened under this fresh transaction.
+    // Verified live: a BlockReference returned from a closed `using` block
+    // serializes its attributes correctly through this path.
     public sealed class DtoDataProviderApi
     {
         private readonly Func<Entity, Transaction, IReadOnlyDictionary<string, string>> _readAll;
@@ -40,25 +47,28 @@ namespace Acd.Mcp.Serialization
         }
 
         public IReadOnlyDictionary<string, string> ReadAll(Entity entity)
-        {
-            var tx = ResolveTx(entity);
-            return _readAll(entity, tx);
-        }
+            => WithTransaction(entity, tx => _readAll(entity, tx));
 
         public string? TryRead(Entity entity, string key)
-        {
-            var tx = ResolveTx(entity);
-            return _tryRead(entity, tx, key);
-        }
+            => WithTransaction(entity, tx => _tryRead(entity, tx, key));
 
-        private static Transaction ResolveTx(Entity entity)
+        // Runs body with a usable transaction: the active TopTransaction if one
+        // exists, otherwise a short-lived OpenCloseTransaction opened on the
+        // entity's own database and committed once the read is done.
+        private static T WithTransaction<T>(Entity entity, Func<Transaction, T> body)
         {
-            var tx = entity?.Database?.TransactionManager?.TopTransaction;
-            if (tx is null)
-                throw new InvalidOperationException(
-                    "No active transaction. DTO projections that read metadata must run inside " +
-                    "a Transaction. Wrap your script in `using (var tx = Db.TransactionManager.StartTransaction()) { ... }`.");
-            return tx;
+            var db = entity?.Database
+                ?? throw new InvalidOperationException(
+                    "Cannot read entity metadata: the entity is not attached to a Database.");
+
+            var top = db.TransactionManager.TopTransaction;
+            if (top is not null)
+                return body(top);
+
+            using var tx = db.TransactionManager.StartOpenCloseTransaction();
+            var result = body(tx);
+            tx.Commit();
+            return result;
         }
     }
 }
