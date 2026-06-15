@@ -96,6 +96,8 @@ Acd.RegisterDto<Circle>(c => new
 **Reduce AutoCAD types to primitives at the leaf** — `c.Color.ColorIndex` (a `short`) rather than `c.Color` (an `Autodesk.AutoCAD.Colors.Color` object that has its own representation concerns). Each AutoCAD type the projection emits has to itself have a DTO; the closer you stay to primitives at the leaves, the fewer DTOs you transitively need.
 
 **Geometry primitives are already covered.** `Point2d`, `Point3d`, `Vector2d`, `Vector3d`, `Extents2d`, `Extents3d`, `ObjectId`, `Handle` — these ship in the system folder. Just include the property; the serializer will project it correctly.
+
+**Common entities already ship too — don't re-author them.** The system folder ships DTOs for `Arc`, `AttributeReference`, `BlockReference`, `Circle`, `DBPoint`, `DBText`, `Hatch`, `Line`, `MText`, `Polyline`, `Polyline3d`, `PolylineVertex3d`, and `Vertex2d`. Returning one of these from a script already produces a rich projection — you only author a DTO here for a type **not** on that list, or when a shipped DTO's shape is too thin (then *override* via the user folder, see `<override-pattern>` — never start from scratch and never edit `dto-system/`).
 </the-projection>
 
 <entity-metadata>

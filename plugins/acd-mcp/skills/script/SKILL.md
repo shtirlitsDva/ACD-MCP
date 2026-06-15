@@ -91,14 +91,20 @@ If you need to express a side-effect-only constructor and discard the value, ass
 </trailing-expression-return-and-auto-return-gotchas>
 
 <serialization-etiquette>
-SCRIPT replies contain `returnValueJson` — an embedded JSON value (object, array, or scalar) produced by a DTO-driven serializer. It is a real nested JSON value in the response, **not** a JSON-encoded string — read its fields directly; do not `JSON.parse` it. The serializer projects each value through a registered DTO; unknown Autodesk-namespaced types emit the marker `{"$unsupported":"FullTypeName"}`.
+SCRIPT replies contain `returnValueJson` — an embedded JSON value (object, array, or scalar), **not** a JSON-encoded string. Read its fields directly; do not `JSON.parse` it. The value is produced by a **DTO-driven serializer**: every value you return is projected through a registered DTO before it reaches you. The DTO system is the *default* serialization path, not an opt-in — use it. Unknown Autodesk-namespaced types emit the marker `{"$unsupported":"FullTypeName"}`.
 
-To get tidy, useful replies:
+**Return the entity, not a hand-rolled anonymous object — the registered DTO IS the projection.** This is the single thing agents get wrong most. The plugin ships maintained DTOs for the common AutoCAD types, so when you return one of them (or a collection of them) you get a complete, consistent, snake_case JSON shape *for free*. A `Line` returned directly comes back as `{ start, end, length, layer, color_index }` — richer than the `new { start = l.StartPoint, end = l.EndPoint }` you'd type by hand, and **identical on every call**, so your follow-up queries stay stable. The DTO author already handled transaction-safety, units, and leaf-to-primitive reduction; re-implementing that inline is wasted effort and drifts call-to-call. Prefer returning the entity whenever a DTO exists.
 
-* **Anonymous-projection at the leaf.** `new { layer = e.Layer, color = e.Color.ColorIndex }` always works, no DTO needed.
-* **Don't return whole `Entity` instances** unless a DTO exists. Project them.
-* **Primitives + geometry types are pre-DTO'd.** `int`, `double`, `string`, `Point2d`, `Point3d`, `Vector3d`, `Extents3d`, `ObjectId`, `Handle` — return them directly.
-* **Collections of DTO'd types work natively.** `List<Circle>`, `IEnumerable<Alignment>`, `Dictionary<string, Layer>` — each element flows back through DTO projection. Lazy enumerables (`entities.Where(...)`) work too — STJ iterates them.
+**Types that ship with a DTO — return these directly:**
+
+* **Entities** — `Arc`, `AttributeReference`, `BlockReference`, `Circle`, `DBPoint`, `DBText`, `Hatch`, `Line`, `MText`, `Polyline`, `Polyline3d`, `PolylineVertex3d`, `Vertex2d`.
+* **Geometry / value types** — `Point2d`, `Point3d`, `Vector2d`, `Vector3d`, `Extents2d`, `Extents3d`, `ObjectId`, `Handle` (plus all C# primitives: `int`, `double`, `string`, `bool`, …). Return directly, and safe to nest inside any projection.
+* **Collections of the above work natively.** `List<Circle>`, `IEnumerable<Entity>`, `Dictionary<string, Line>`, and lazy `entities.Where(...)` — each element flows through its DTO; STJ iterates the enumerable.
+
+The source of truth is the system DTO folder `%LOCALAPPDATA%\Acd.Mcp\dto-system\` (one `<type>.csx` per registered type) plus anything in `dto-user\`. **The list above can drift as DTOs are added — when unsure whether a type is covered, just return it and look:** a rich object means it's DTO'd; a `{"$unsupported":"FullTypeName"}` marker means it isn't.
+
+**Anonymous projection is the escape hatch, not the default.** Reach for `new { ... }` only when you want a *subset* or *reshaped* view (e.g. just the layer names off 500 entities), when the value isn't an entity at all (a computed/ad-hoc shape), or when the type has no DTO and it's a true one-shot. `new { layer = e.Layer, count = n }` always works and needs no DTO — just don't use it to re-implement a projection a DTO already gives you.
+
 * **For block attributes / PropertySets, use `Acd.DataProvider.ReadAll(entity)`** — returns `IReadOnlyDictionary<string, string>` with the union of every registered metadata mechanism. Reading any one mechanism by hand misses the others for users who store metadata differently than you assumed. On vanilla AutoCAD the union is block-attributes-only; on Civil 3D / Map / MEP it also includes PropertySets. XData is intentionally not in the composite yet — track the issue rather than reading it by hand.
 * **When you see `{"$unsupported":"Autodesk.XXX.YYY"}`** — that's the signal to write a DTO. Hand the type to `/acd-mcp:add-dto`. The factory claims every `Autodesk.*` type, so anything in that namespace without a DTO surfaces the marker.
 * **When you see `{"$serialization_error":"..."}`** — the value couldn't be serialised (commonly: a return reference whose owning Transaction has been disposed). Re-run the snippet so the value is freshly built inside the active transaction, or project to primitives at the leaf.
@@ -277,4 +283,5 @@ SCRIPT-specific paths (the general folder layout is in `/acd-mcp:start` `<file-l
 * Don't propose without reading the mirror first.
 * Don't call `autocad_script_propose` and `autocad_script_execute` with the SAME body to "make sure it ran". Propose stages; execute runs. They're separate verbs.
 * Don't try to "click Run for the user." That's their action.
+* Don't hand-roll a `new { ... }` anonymous object for a type that already has a DTO (`Line`, `Circle`, `Polyline`, `BlockReference`, …). Return the entity and let the maintained DTO project it — see `<serialization-etiquette>`. Anonymous projection is for subsets, reshapes, and non-entity values.
 </what-NOT-to-do>
