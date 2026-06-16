@@ -48,13 +48,13 @@ public class NoCommands { }
 
 ### NETLOAD (default)
 
-1. `dotnet build Acd.Mcp.sln -c NonALCRelease -p:Platform=x64`
+1. `dotnet build Acd.Mcp.csproj -c NonALCRelease -p:Platform=x64`
 2. In AutoCAD: `NETLOAD` → `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll`
 3. `ACDMCP_PING` to verify (the pipe auto-starts on first idle).
 
-### DevReload / NSLOAD
+### DevReload
 
-Build with `-p:IsolatedAlc=true`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`. [NSLOAD](https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD): publish the `FolderProfile` profile (sets `IsolatedAlc=true`, drops the DLL in the catalogue), then load it from the palette.
+Build with `dotnet build Acd.Mcp.csproj -c Release -p:Platform=x64`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`. [NSLOAD](https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD): publish the `FolderProfile` profile (sets `IsolatedAlc=true`, drops the DLL in the catalogue), then load it from the palette.
 
 ## Install
 
