@@ -36,7 +36,7 @@ Two build flavours, switched by one compiler symbol (`ISOLATED_ALC`, off by defa
 | **Netload** *(default)* | `dotnet build -c Release` | `NETLOAD`, or the `.bundle` autoload |
 | **IsolatedALC** | `dotnet build -c ALCRelease` (or the `FolderProfile` publish profile) | DevReload |
 
-The marker is an empty `[assembly: CommandClass(NoCommands)]` that stops AutoCAD's `ExtensionLoader` from auto-registering commands. DevReload/NSLOAD byte-load the DLL and register commands themselves via the removable `Utils.AddCommand`, so the marker must be **present** there or the second reload throws `eDuplicateKey`. With `NETLOAD`/`.bundle`, AutoCAD is the only registrar, so it must be **absent** or no commands appear. Gated in `McpPlugin.cs`:
+The marker is an empty `[assembly: CommandClass(NoCommands)]` that stops AutoCAD's `ExtensionLoader` from auto-registering commands. DevReload byte-loads the DLL and registers commands itself via the removable `Utils.AddCommand`, so the marker must be **present** there or the second reload throws `eDuplicateKey`. With `NETLOAD`/`.bundle`, AutoCAD is the only registrar, so it must be **absent** or no commands appear. Gated in `McpPlugin.cs`:
 
 ```csharp
 #if ISOLATED_ALC
@@ -55,7 +55,7 @@ public class NoCommands { }
 
 ### DevReload
 
-Build with `dotnet build Acd.Mcp.csproj -c ALCRelease -p:Platform=x64`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`. [NSLOAD](https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD): publish the `FolderProfile` profile (sets `IsolatedAlc=true`, drops the DLL in the catalogue), then load it from the palette.
+Build with `dotnet build Acd.Mcp.csproj -c ALCRelease -p:Platform=x64`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`.
 
 ## Install
 
