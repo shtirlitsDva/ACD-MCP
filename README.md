@@ -32,8 +32,8 @@ Two build flavours, switched by one compiler symbol (`ISOLATED_ALC`, off by defa
 
 | Flavour | Build with | Load with |
 |---|---|---|
-| **Netload** *(default)* | `dotnet build -c Release` | `NETLOAD`, or the `.bundle` autoload |
-| **IsolatedALC** | `-p:IsolatedAlc=true` (or the `FolderProfile` publish profile) | DevReload / NSLOAD |
+| **Netload** *(default)* | `dotnet build -c NonALCRelease` | `NETLOAD`, or the `.bundle` autoload |
+| **IsolatedALC** | `dotnet build -c Release` (or the `FolderProfile` publish profile) | DevReload |
 
 The marker is an empty `[assembly: CommandClass(NoCommands)]` that stops AutoCAD's `ExtensionLoader` from auto-registering commands. DevReload/NSLOAD byte-load the DLL and register commands themselves via the removable `Utils.AddCommand`, so the marker must be **present** there or the second reload throws `eDuplicateKey`. With `NETLOAD`/`.bundle`, AutoCAD is the only registrar, so it must be **absent** or no commands appear. Gated in `McpPlugin.cs`:
 
