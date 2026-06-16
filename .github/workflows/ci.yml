@@ -1,7 +1,14 @@
-# CI for ACD-MCP. Builds the full solution on every push (including the
+# CI for ACD-MCP. Builds the solution on every push (including the
 # AutoCAD plugin DLL — AutoCAD 2025 + Civil 3D 2025 refs come from NuGet,
 # so no AutoCAD install is required on the runner). On tag push (v*),
 # also produces the release zip and uploads it to a GitHub Release.
+#
+# We build Acd.Mcp.CI.slnf, NOT Acd.Mcp.sln. The filter is the full
+# solution MINUS tests/Rvt.Mcp.Tests, which references the REAL installed
+# RevitAPI.dll (C:\Program Files\Autodesk\Revit 2025) — absent on the
+# runner, so that one project can't build CI-side. NOTE: a filter lists
+# the projects to build, so any NEW project must be added to the .slnf or
+# it won't be built/tested on CI.
 name: CI
 
 on:
@@ -22,13 +29,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Acd.Mcp.sln
+        run: dotnet restore Acd.Mcp.CI.slnf
 
-      - name: Build (full solution incl. AutoCAD plugin DLL)
-        run: dotnet build Acd.Mcp.sln -c Release -p:Platform=x64 --no-restore
+      - name: Build (CI filter — solution minus the Revit-install-only test project)
+        run: dotnet build Acd.Mcp.CI.slnf -c Release -p:Platform=x64 --no-restore
 
       - name: Test
-        run: dotnet test Acd.Mcp.sln -c Release -p:Platform=x64 --no-restore --no-build --verbosity normal
+        run: dotnet test Acd.Mcp.CI.slnf -c Release -p:Platform=x64 --no-restore --no-build --verbosity normal
 
       - name: Lint installer + release scripts (PSScriptAnalyzer)
         shell: pwsh

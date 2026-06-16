@@ -15,7 +15,8 @@
        binaries — Claude Code's /plugin install launches Bridge from here
        via .mcp.json's ${CLAUDE_PLUGIN_ROOT}/bin/Acd.Mcp.Bridge.exe; Codex's
        /plugin install uses codex.mcp.json's ./bin/Acd.Mcp.Bridge.exe).
-    2. dotnet build  Acd.Mcp.sln    → Acd.Mcp.dll + transitive deps
+    2. dotnet build  Acd.Mcp.CI.slnf → Acd.Mcp.dll + transitive deps
+       (filter = solution minus the Revit-install-only test project)
     3. Assemble Deploy/acd-mcp-plugin/ from the plugins/acd-mcp/ folder
        + autocad-bundle/ACD-MCP.bundle/Contents/ (Acd.Mcp.dll + deps).
     4. Zip it to Deploy/acd-mcp-plugin-v<X.Y.Z>.zip
@@ -114,8 +115,12 @@ if (-not $SkipBuild) {
     Get-ChildItem $repoBinDir -File -Filter '*.pdb' | Remove-Item -Force
     Write-Ok "Bridge published to $repoBinDir"
 
-    Write-Step "dotnet build Acd.Mcp.sln"
-    dotnet build 'Acd.Mcp.sln' -c $Configuration -p:Platform=x64
+    # Build the CI filter (solution minus tests/Rvt.Mcp.Tests, which needs a
+    # local Revit install). The release only needs the production assemblies,
+    # never the test projects, so the filter is the correct target both here
+    # and in the Revit-less CI "release" job that invokes this script.
+    Write-Step "dotnet build Acd.Mcp.CI.slnf"
+    dotnet build 'Acd.Mcp.CI.slnf' -c $Configuration -p:Platform=x64
     if ($LASTEXITCODE -ne 0) { Fail "Plugin build failed" }
     Write-Ok "Plugin built"
 }

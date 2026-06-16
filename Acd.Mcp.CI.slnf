@@ -1,0 +1,18 @@
+{
+  "solution": {
+    "path": "Acd.Mcp.sln",
+    "projects": [
+      "src\\Autocad\\Acd.Mcp.Api\\Acd.Mcp.Api.csproj",
+      "src\\Autocad\\Acd.Mcp.Batch\\Acd.Mcp.Batch.csproj",
+      "src\\Autocad\\Acd.Mcp.Bridge\\Acd.Mcp.Bridge.csproj",
+      "src\\Autocad\\Acd.Mcp.Contracts\\Acd.Mcp.Contracts.csproj",
+      "src\\Autocad\\Acd.Mcp\\Acd.Mcp.csproj",
+      "src\\Revit\\Rvt.Mcp.Bridge\\Rvt.Mcp.Bridge.csproj",
+      "src\\Revit\\Rvt.Mcp.Loader\\Rvt.Mcp.Loader.csproj",
+      "src\\Revit\\Rvt.Mcp\\Rvt.Mcp.csproj",
+      "tests\\Acd.Mcp.Batch.Tests\\Acd.Mcp.Batch.Tests.csproj",
+      "tests\\Acd.Mcp.Bridge.Tests\\Acd.Mcp.Bridge.Tests.csproj",
+      "tests\\Acd.Mcp.Tests\\Acd.Mcp.Tests.csproj"
+    ]
+  }
+}
