@@ -48,7 +48,7 @@ public class NoCommands { }
 
 ### NETLOAD (default)
 
-1. `dotnet build Acd.Mcp.sln -c Release -p:Platform=x64`
+1. `dotnet build Acd.Mcp.sln -c NonALCRelease -p:Platform=x64`
 2. In AutoCAD: `NETLOAD` → `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll`
 3. `ACDMCP_PING` to verify (the pipe auto-starts on first idle).
 
