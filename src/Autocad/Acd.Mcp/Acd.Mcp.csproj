@@ -21,7 +21,8 @@
          Affects only our plugin code — the C# script the user types is
          independently restricted via ScriptOptions.WithAllowUnsafe(false). -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Configurations>Debug;Release;IALCD;IALCR</Configurations>
+    <Configurations>Debug;Release;ALCDebug;ALCRelease</Configurations>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
@@ -87,31 +88,32 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <OutputPath>bin\Debug\</OutputPath>
     <DebugType>full</DebugType>
-    <DefineConstants>$(DefineConstants);ISOLATED_ALC</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCD|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCDebug|x64'">
     <OutputPath>bin\Debug\</OutputPath>
     <DebugType>full</DebugType>
+    <DefineConstants>$(DefineConstants);ISOLATED_ALC</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
-    <DefineConstants>$(DefineConstants);ISOLATED_ALC</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCR|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCRelease|x64'">
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
+    <Optimize>True</Optimize>
+    <DefineConstants>$(DefineConstants);ISOLATED_ALC</DefineConstants>
   </PropertyGroup>
 
   <!-- "IsolatedALC" build flavour. Set IsolatedAlc=true (the FolderProfile publish
        profile does this; or pass -p:IsolatedAlc=true) to define the ISOLATED_ALC
        compiler symbol, which makes McpPlugin emit the empty
-       [assembly: CommandClass(NoAutoCommands)] marker. That marker suppresses
+       [assembly: CommandClass(NoCommands)] marker. That marker suppresses
        AutoCAD's ExtensionLoader auto-scan, which is required when the DLL is
-       byte-loaded into a collectible ALC by a custom loader (DevReload / NSLOAD) —
+       byte-loaded into a collectible ALC by a custom loader (DevReload) —
        without it the second hot-reload throws eDuplicateKey.
 
        OFF by default ("Netload" flavour) so AutoCAD's native loader (NETLOAD or the

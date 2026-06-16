@@ -9,7 +9,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <Configurations>Debug;Release;IALCD;IALCR</Configurations>
+    <Configurations>Debug;Release;ALCDebug;ALCRelease</Configurations>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
@@ -17,7 +18,7 @@
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCD|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCDebug|x64'">
     <OutputPath>bin\Debug\</OutputPath>
     <DebugType>full</DebugType>
   </PropertyGroup>
@@ -27,7 +28,7 @@
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCR|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCRelease|x64'">
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
   </PropertyGroup>

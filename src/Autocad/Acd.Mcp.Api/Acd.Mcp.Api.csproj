@@ -4,7 +4,8 @@
     <AssemblyName>Acd.Mcp.Api</AssemblyName>
     <RootNamespace>Acd.Mcp.Api</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Configurations>Debug;Release;IALCD;IALCR</Configurations>
+    <Configurations>Debug;Release;ALCDebug;ALCRelease</Configurations>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
 
   <!-- Public surface that REPL submissions bind against. Must live in the
@@ -24,7 +25,7 @@
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCD|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCDebug|x64'">
     <OutputPath>bin\Debug\</OutputPath>
     <DebugType>full</DebugType>
   </PropertyGroup>
@@ -34,7 +35,7 @@
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='IALCR|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCRelease|x64'">
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
   </PropertyGroup>

@@ -21,10 +21,11 @@ MCP client ─stdio─▶ Acd.Mcp.Bridge.exe ─named pipe─▶ AutoCAD (Acd.Mc
 ## Build
 
 ```powershell
-dotnet build Acd.Mcp.sln -c Release -p:Platform=x64
+dotnet build src/Autocad/Acd.Mcp/Acd.Mcp.csproj -c Release -p:Platform=x64
+dotnet build src/Autocad/Acd.Mcp.Bridge/Acd.Mcp.Bridge.csproj -c Release -p:Platform=x64
 ```
 
-Outputs: `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll` (load into AutoCAD) and `src/Autocad/Acd.Mcp.Bridge/bin/Release/Acd.Mcp.Bridge.exe` (register with your MCP client).
+Outputs: `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll` (load into AutoCAD) and `src/Autocad/Acd.Mcp.Bridge/bin/Release/Acd.Mcp.Bridge.exe` (register with your MCP client). Build the two `.csproj` files directly (not the `.sln`) — the solution also pulls in the Revit projects.
 
 ## How the plugin loads
 
@@ -32,8 +33,8 @@ Two build flavours, switched by one compiler symbol (`ISOLATED_ALC`, off by defa
 
 | Flavour | Build with | Load with |
 |---|---|---|
-| **Netload** *(default)* | `dotnet build -c NonALCRelease` | `NETLOAD`, or the `.bundle` autoload |
-| **IsolatedALC** | `dotnet build -c Release` (or the `FolderProfile` publish profile) | DevReload |
+| **Netload** *(default)* | `dotnet build -c Release` | `NETLOAD`, or the `.bundle` autoload |
+| **IsolatedALC** | `dotnet build -c ALCRelease` (or the `FolderProfile` publish profile) | DevReload |
 
 The marker is an empty `[assembly: CommandClass(NoCommands)]` that stops AutoCAD's `ExtensionLoader` from auto-registering commands. DevReload/NSLOAD byte-load the DLL and register commands themselves via the removable `Utils.AddCommand`, so the marker must be **present** there or the second reload throws `eDuplicateKey`. With `NETLOAD`/`.bundle`, AutoCAD is the only registrar, so it must be **absent** or no commands appear. Gated in `McpPlugin.cs`:
 
@@ -44,17 +45,17 @@ public class NoCommands { }
 #endif
 ```
 
-`Acd.Mcp.csproj` defines the symbol from a `Target` (not a `PropertyGroup`) so it still applies when set by the `FolderProfile` publish profile, which is imported after the project body.
+`Acd.Mcp.csproj` defines the symbol two ways: the `ALCDebug` / `ALCRelease` configurations set it directly, and a `Target` also sets it whenever `IsolatedAlc=true` (the `FolderProfile` publish path). The `Target` is needed because the publish profile is imported *after* the project body, so a `PropertyGroup` keyed on `IsolatedAlc` would miss it.
 
 ### NETLOAD (default)
 
-1. `dotnet build Acd.Mcp.csproj -c NonALCRelease -p:Platform=x64`
+1. `dotnet build Acd.Mcp.csproj -c Release -p:Platform=x64`
 2. In AutoCAD: `NETLOAD` → `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll`
 3. `ACDMCP_PING` to verify (the pipe auto-starts on first idle).
 
 ### DevReload
 
-Build with `dotnet build Acd.Mcp.csproj -c Release -p:Platform=x64`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`. [NSLOAD](https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD): publish the `FolderProfile` profile (sets `IsolatedAlc=true`, drops the DLL in the catalogue), then load it from the palette.
+Build with `dotnet build Acd.Mcp.csproj -c ALCRelease -p:Platform=x64`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`. [NSLOAD](https://github.com/shtirlitsDva/Autocad-Civil3d-Tools/tree/master/Acad-C3D-Tools/NSLOAD): publish the `FolderProfile` profile (sets `IsolatedAlc=true`, drops the DLL in the catalogue), then load it from the palette.
 
 ## Install
 
