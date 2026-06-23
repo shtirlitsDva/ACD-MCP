@@ -59,7 +59,7 @@ namespace Acd.Mcp.Ui
                     if (!r.Stderr.EndsWith("\n")) sb.AppendLine();
                 }
 
-                foreach (var d in r.Diagnostics)
+                foreach (var d in r.Diagnostics ?? [])
                     sb.AppendLine($"{d.Severity} ({d.Line ?? 0},{d.Column ?? 0}): {d.Message}");
 
                 if (sb.Length == 0)

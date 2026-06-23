@@ -138,7 +138,7 @@ Six tools, five resources. Every tool takes an optional **`pid`** (the AutoCAD p
 
 ### Tools
 
-* **`autocad_script_execute(code, timeout_ms?, pid?)`** — run C# on the main thread under a doc lock. Globals: `Doc`, `Db`, `Ed`, `CivilDoc` (null in non-Civil drawings), `Acd`. Default imports cover `System`, LINQ, IO, Text and `Autodesk.AutoCAD.*`; add `using Autodesk.Civil.DatabaseServices;` yourself when needed. Declarations persist. Returns `ExecuteResult` (`success`, `return_value_repr`, `return_value_json`, `diagnostics`, `stdout`, `stderr`, `elapsed_ms`).
+* **`autocad_script_execute(code, timeout_ms?, pid?)`** — run C# on the main thread under a doc lock. Globals: `Doc`, `Db`, `Ed`, `CivilDoc` (null in non-Civil drawings), `Acd`. Default imports cover `System`, LINQ, IO, Text and `Autodesk.AutoCAD.*`; add `using Autodesk.Civil.DatabaseServices;` yourself when needed. Declarations persist. Returns `ExecuteResult` (`success`, `return_value_json`, `elapsed_ms`, plus `stdout`, `stderr`, `diagnostics` only when non-empty).
 * **`autocad_script_propose(name, script_body, input_summary?, pid?)`** — stage a single-drawing script in the SCRIPT palette for review.
 * **`autocad_batch_propose_script(name, script_body, input_summary?, pid?)`** — save + load a batch script into the BATCH palette.
 * **`autocad_batch_run_test(name?, pid?)`** — TEST-run the batch script over the selected folder/mask; opens each drawing read-shared and rolls back. There is no live-run tool — the user runs Live in person.

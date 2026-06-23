@@ -26,9 +26,10 @@ namespace Rvt.Mcp.Bridge.Tools
             "persist across calls — it's a session, not a one-shot. Globals: UiApp (UIApplication), " +
             "App (Application), UiDoc (UIDocument or null), Doc (active Document or null). " +
             "Autodesk.Revit.DB and Autodesk.Revit.UI are imported. Model mutations need the snippet " +
-            "to open/commit its own Transaction on Doc. Returns success, return_value_repr, " +
-            "return_value_json (Element → {id,name,category,type}; ElementId → number; XYZ → {x,y,z}; " +
-            "other Revit types → {\"$unsupported\": ...}), diagnostics, stdout/stderr, elapsed_ms.")]
+            "to open/commit its own Transaction on Doc. Returns success, return_value_json " +
+            "(Element → {id,name,category,type}; ElementId → number; XYZ → {x,y,z}; " +
+            "other Revit types → {\"$unsupported\": ...}), and elapsed_ms — plus, only when " +
+            "non-empty, stdout, stderr, and diagnostics.")]
         public async Task<ExecuteResult> ExecuteAsync(
             [Description("C# code to execute. Multi-line allowed; may declare vars/methods; may end with an expression whose value is returned.")]
             string code,

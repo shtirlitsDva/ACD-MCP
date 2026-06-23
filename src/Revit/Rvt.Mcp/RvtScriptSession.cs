@@ -56,27 +56,33 @@ namespace Rvt.Mcp
                 var repr = value?.ToString();
                 var json = SerializeReturnValue(value);
                 return ExecuteResult.Ok(repr, json, sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(capture.Stderr) };
             }
             catch (CompilationErrorException cex)
             {
                 var diags = cex.Diagnostics.Select(MapDiagnostic).ToArray();
                 return ExecuteResult.CompileError(diags, sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(capture.Stderr) };
             }
             catch (OperationCanceledException)
             {
                 return ExecuteResult.Runtime("Cancelled", sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(capture.Stderr) };
             }
             catch (Exception ex)
             {
                 var stderr = capture.Stderr;
                 stderr = string.IsNullOrEmpty(stderr) ? ex.ToString() : stderr + "\n" + ex;
                 return ExecuteResult.Runtime("Unhandled exception", sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(stderr) };
             }
         }
+
+        // Mirror of ScriptSession.Clean (AutoCAD side): empty -> null so the
+        // field is omitted from the wire, and CRLF/CR -> LF to drop the dead
+        // '\r' (JSON escapes every line break, so `\r\n` costs twice `\n`).
+        private static string? Clean(string? s) =>
+            string.IsNullOrEmpty(s) ? null : s.Replace("\r\n", "\n").Replace("\r", "\n");
 
         public void Reset()
         {
@@ -106,6 +112,12 @@ namespace Rvt.Mcp
         {
             if (value is null) return null;
             if (_jsonOptions is null) return null;
+
+            // Top-level string returns: collapse CRLF/CR -> LF (mirror of the
+            // AutoCAD ScriptSession). Nested strings inside a returned object are
+            // left alone.
+            if (value is string s)
+                value = s.Replace("\r\n", "\n").Replace("\r", "\n");
 
             try
             {

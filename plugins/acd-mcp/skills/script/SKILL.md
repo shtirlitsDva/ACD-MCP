@@ -201,11 +201,12 @@ Both `autocad_script_execute` and `autocad_script_propose` return discriminated 
 
 ```
 # autocad_script_execute
-{ success: true,  stdout, stderr, return_value_repr, return_value_json,
-  diagnostics: [], elapsed_ms }                                    # success
-{ success: false, stderr, diagnostics: [...],
-  return_value_repr: null, return_value_json: null,
-  elapsed_ms }                                                     # compile error or runtime
+{ success: true,  return_value_json, elapsed_ms }                  # success
+{ success: false, elapsed_ms }                                     # runtime error (see stderr)
+# stdout, stderr, and diagnostics appear ONLY when non-empty — absent means empty.
+# A compile error adds diagnostics: [...]; a runtime error/throw adds stderr.
+# There is no return_value_repr — read return_value_json (it is the value itself,
+# never a JSON-encoded string; for a string return it carries the string directly).
 
 # autocad_script_propose
 { ok: true,  saved_as, name, replaced_dirty,

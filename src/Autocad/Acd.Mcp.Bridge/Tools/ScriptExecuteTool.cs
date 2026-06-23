@@ -25,9 +25,10 @@ namespace Acd.Mcp.Bridge.Tools
             "level persist across calls — it's a session, not a one-shot. Globals available: Doc (active " +
             "Document), Db (its Database), Ed (its Editor), CivilDoc (CivilDocument or null), Acd " +
             "(metadata façade). The full Autodesk.AutoCAD.* namespaces are imported (Civil 3D imports " +
-            "must be added per-submission). Returns an object with success, return_value_repr, " +
-            "return_value_json, diagnostics (compile errors with line/col), stdout/stderr (captured), " +
-            "and elapsed_ms.")]
+            "must be added per-submission). Returns an object with success, return_value_json, " +
+            "and elapsed_ms — plus, only when non-empty, stdout, stderr, and diagnostics (compile " +
+            "errors with line/col). Read return_value_json directly; it is the projected value " +
+            "(or a $unsupported / $serialization_error marker), never a JSON-encoded string.")]
         public async Task<ExecuteResult> ExecuteAsync(
             [Description("C# code to execute. Multi-line allowed; may declare vars/methods; may end with an expression whose value is returned.")]
             string code,

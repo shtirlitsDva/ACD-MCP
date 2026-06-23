@@ -75,18 +75,18 @@ namespace Acd.Mcp.Scripting
                 var repr = value?.ToString();
                 var json = SerializeReturnValue(value);
                 return ExecuteResult.Ok(repr, json, sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(capture.Stderr) };
             }
             catch (CompilationErrorException cex)
             {
                 var diags = cex.Diagnostics.Select(MapDiagnostic).ToArray();
                 return ExecuteResult.CompileError(diags, sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(capture.Stderr) };
             }
             catch (OperationCanceledException)
             {
                 return ExecuteResult.Runtime("Cancelled", sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = capture.Stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(capture.Stderr) };
             }
             catch (Exception ex)
             {
@@ -95,9 +95,18 @@ namespace Acd.Mcp.Scripting
                 var stderr = capture.Stderr;
                 stderr = string.IsNullOrEmpty(stderr) ? ex.ToString() : stderr + "\n" + ex;
                 return ExecuteResult.Runtime("Unhandled exception", sw.ElapsedMilliseconds)
-                    with { Stdout = capture.Stdout, Stderr = stderr };
+                    with { Stdout = Clean(capture.Stdout), Stderr = Clean(stderr) };
             }
         }
+
+        // Normalize a captured stream for the wire: empty -> null (so the field
+        // is omitted entirely, see ExecuteResult), and CRLF/CR -> LF. The lone
+        // '\r' is dead weight to an LLM reader, and in JSON every line break is
+        // escaped, so `\r\n` costs the 4-char `\r\n` where `\n` (2 chars) carries
+        // the same meaning. The palette reads the live Repr field, not these, so
+        // collapsing line endings here is invisible to the UI.
+        private static string? Clean(string? s) =>
+            string.IsNullOrEmpty(s) ? null : s.Replace("\r\n", "\n").Replace("\r", "\n");
 
         public void Reset()
         {
@@ -120,6 +129,15 @@ namespace Acd.Mcp.Scripting
         {
             if (value is null) return null;
             if (_jsonOptions is null) return null;
+
+            // A top-level string return is the dominant shape (StringBuilder
+            // reports). Collapse CRLF/CR -> LF here, same rationale as Clean():
+            // the '\r' is dead weight and JSON escapes every line break. Only the
+            // top-level string is normalized — '\r' buried in a nested field of a
+            // returned object is left alone (walking arbitrary JSON to strip it
+            // is not worth the cost).
+            if (value is string s)
+                value = s.Replace("\r\n", "\n").Replace("\r", "\n");
 
             try
             {

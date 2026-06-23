@@ -111,13 +111,16 @@ JSON-RPC 2.0 method surface:
   - `reset() -> { ok: true }`
   - `ping() -> { autocad_pid: number, autocad_version: string, mcp_version: string }`
 
-`ExecuteResult`:
+`ExecuteResult` (current shape — the source of truth is `src/Autocad/Acd.Mcp/ExecuteResult.cs`;
+the pseudo-code under `<execute-flow>` below predates the `returnValueJson` field and is illustrative only):
   { success: bool,
-    stdout: string,
-    stderr: string,
-    returnValueRepr: string?,
-    diagnostics: [{ severity, message, line?, column?, file? }, ...],
-    elapsed_ms: number }
+    returnValueJson: <projected JSON value>?,   // the value itself, not a JSON-encoded string
+    elapsed_ms: number,
+    stdout?: string,                            // omitted when empty
+    stderr?: string,                            // omitted when empty
+    diagnostics?: [{ severity, message, line?, column? }, ...] }  // omitted when empty
+  // returnValueRepr exists on the record but is [JsonIgnore] — display-only for the
+  // WPF palette, never serialized to the wire (it was redundant with returnValueJson).
 
 This wire format is *internal*. The Bridge translates it to MCP. Keeping them separate
 means we can add Bridge tools later (e.g. `list_drawing_entities`, `screenshot`) without
