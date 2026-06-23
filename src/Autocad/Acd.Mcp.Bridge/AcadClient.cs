@@ -108,9 +108,10 @@ namespace Acd.Mcp.Bridge
                     // budget for this iteration.
                     lastTransient = new AcadTransportException(
                         AcadTransportFailure.PipeNotListening,
-                        $"AutoCAD PID {resolution.Pid} is up, but pipe " +
-                        $"'{PipeProber.PipeNameFor(resolution.Pid)}' isn't listening yet. " +
-                        "Did you run ACDMCP_START?");
+                        $"AutoCAD PID {resolution.Pid} is up; the acd-mcp listener on pipe " +
+                        $"'{PipeProber.PipeNameFor(resolution.Pid)}' is still starting — normal " +
+                        "right after the plugin loads. Retry in a few seconds. ACDMCP_START is " +
+                        "only needed if the plugin was never loaded into this process.");
                     await Task.Delay(_retry.AttemptTimeoutsMs[attempt], ct).ConfigureAwait(false);
                     continue;
                 }
