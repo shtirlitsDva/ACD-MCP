@@ -1,0 +1,9 @@
+{
+  "sharedAssemblies": [
+    "Rvt.Mcp.Api"
+  ],
+  "mixedModeAssemblies": [],
+  "streamedAssemblies": [
+    "Rvt.Mcp.Api"
+  ]
+}

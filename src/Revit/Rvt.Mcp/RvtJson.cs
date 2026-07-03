@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -16,6 +17,11 @@ namespace Rvt.Mcp
             {
                 PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                // Agent-facing JSON over a JSON-RPC byte stream, not HTML — relax
+                // the default HTML-safe encoder so '<' '>' '&' backtick and
+                // non-ASCII emit literally instead of as \uXXXX. Mirrors
+                // Acd.Mcp.Serialization.AcadDtoOptions.
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
                 Converters = { new RevitValueConverterFactory() },
             };
         }

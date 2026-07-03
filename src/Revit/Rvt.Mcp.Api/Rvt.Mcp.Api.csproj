@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AssemblyName>Rvt.Mcp.Api</AssemblyName>
+    <RootNamespace>Rvt.Mcp</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Configurations>Debug;Release;ALCDebug;ALCRelease</Configurations>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <!-- Public surface that Revit REPL submissions bind against (RvtGlobals, the
+       script-session globalsType). Must live in the host's DEFAULT ALC so the
+       Roslyn submission assemblies don't reach back into the collectible plugin
+       ALC at runtime (a non-collectible assembly may not reference a collectible
+       one). Under DevReload that means listing "Rvt.Mcp.Api" in the plugin's
+       SharedAssemblies.Config.json — RevitPluginManager pre-loads it into the
+       default ALC before the plugin. Keep this assembly small and stable —
+       every change forces a Revit restart in dev. Twin of Acd.Mcp.Api. -->
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCDebug|x64'">
+    <OutputPath>bin\Debug\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCRelease|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DebugType>full</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference-only Revit 2025 API (Revit provides the real assemblies at
+         runtime). RvtGlobals exposes UIApplication/Application/Document only. -->
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2025.*" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2025.*" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

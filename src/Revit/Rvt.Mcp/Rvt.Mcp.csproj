@@ -43,6 +43,25 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- RvtGlobals (the REPL globalsType) lives here so it ends up in the
+         host's default (non-collectible) ALC, not this collectible plugin's
+         ALC — otherwise the Roslyn script submission can't reference it. Under
+         DevReload that means "Rvt.Mcp.Api" must be in SharedAssemblies.Config.json
+         below; RevitPluginManager pre-loads the side-by-side DLL into the
+         default ALC before this plugin loads. Twin of Acd.Mcp -> Acd.Mcp.Api. -->
+    <ProjectReference Include="..\Rvt.Mcp.Api\Rvt.Mcp.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- DevReload reads this side-by-side config next to Rvt.Mcp.dll to decide
+         which assemblies to pre-load into the default ALC. Copied to output on
+         every build so a fresh clone never produces a broken bin/. -->
+    <None Include="SharedAssemblies.Config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- AutoCAD-free pieces shared with the AutoCAD plugin via linked
          compile — wire types and Roslyn plumbing are host-agnostic. -->
     <Compile Include="..\..\Autocad\Acd.Mcp\Pipe\Protocol.cs" Link="Shared\Protocol.cs" />

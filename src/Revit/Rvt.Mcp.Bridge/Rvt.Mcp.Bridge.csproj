@@ -37,6 +37,9 @@
     <!-- Wire-domain types shared with both plugins via linked compile. -->
     <Compile Include="..\..\Autocad\Acd.Mcp\Pipe\Protocol.cs" Link="Pipe\Protocol.cs" />
     <Compile Include="..\..\Autocad\Acd.Mcp\ExecuteResult.cs" Link="ExecuteResult.cs" />
+    <!-- Shared agent-facing MCP JSON policy (relaxed encoder) — one source of
+         truth for both bridges so the escaping fix lives in a single place. -->
+    <Compile Include="..\..\Autocad\Acd.Mcp.Bridge\McpServerJson.cs" Link="McpServerJson.cs" />
   </ItemGroup>
 
   <ItemGroup>

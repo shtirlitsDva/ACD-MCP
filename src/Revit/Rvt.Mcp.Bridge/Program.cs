@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Acd.Mcp.Bridge;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -35,7 +36,9 @@ builder.Services.AddSingleton(new RevitClient(explicitPid));
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    // Shared agent-facing JSON policy (relaxed encoder) — single source of
+    // truth in McpServerJson, linked from the AutoCAD bridge.
+    .WithToolsFromAssembly(serializerOptions: McpServerJson.Relaxed);
 
 await builder.Build().RunAsync();
 return 0;
