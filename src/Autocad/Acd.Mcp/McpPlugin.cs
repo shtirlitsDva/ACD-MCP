@@ -16,35 +16,13 @@ using SynchronizationContext = System.Threading.SynchronizationContext;
 
 [assembly: ExtensionApplication(typeof(Acd.Mcp.McpPlugin))]
 
-// ACD-MCP builds in two flavours that differ only in WHO registers the plugin's
-// [CommandMethod]s. The marker below is emitted in exactly one of them.
-//
-//   * DEFAULT — "Netload" flavour (ISOLATED_ALC undefined). AutoCAD's own
-//     ExtensionLoader loads the DLL (a manual NETLOAD, or the .bundle autoload),
-//     auto-scans it, and registers the commands. This is the out-of-the-box build:
-//     CI, the marketplace bin, the bundle, and what internet users get. The marker
-//     MUST be absent here — with it present AutoCAD would scan only NoAutoCommands
-//     and register zero commands.
-//
-//   * ISOLATED_ALC — "IsolatedALC" flavour (built via the FolderProfile publish
-//     profile, or -p:IsolatedAlc=true). A custom loader (DevReload in dev, NSLOAD
-//     for deployment) byte-loads the DLL into a collectible AssemblyLoadContext and
-//     registers the commands itself via the *removable* Utils.AddCommand. AutoCAD's
-//     ExtensionLoader STILL sees the byte-load and would ALSO register them via the
-//     *permanent* CommandClass.AddCommand — colliding and surviving the ALC unload,
-//     so the next reload throws eDuplicateKey. The empty NoAutoCommands type "claims"
-//     command registration so AutoCAD's auto-scan finds nothing, leaving the loader's
-//     removable registration as the only one.
-#if ISOLATED_ALC
-[assembly: CommandClass(typeof(Acd.Mcp.NoCommands))]
-#endif
+// One build, loadable either way. AutoCAD's ExtensionLoader registers the
+// [CommandMethod]s when the DLL is NETLOADed or autoloaded from the .bundle.
+// DevReload suppresses that scan for assemblies it loads into its own ALC and
+// registers the commands itself through the removable Utils.AddCommand.
 
 namespace Acd.Mcp
 {
-#if ISOLATED_ALC
-    public class NoCommands { }
-#endif
-
     public class McpPlugin : IExtensionApplication
     {
         // Bump between rebuilds to verify hot-reload picks up the new assembly.

@@ -29,33 +29,24 @@ Outputs: `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll` (load into AutoCAD) and `
 
 ## How the plugin loads
 
-Two build flavours, switched by one compiler symbol (`ISOLATED_ALC`, off by default):
+One build, `dotnet build -c Release`, loadable either way.
 
-| Flavour | Build with | Load with |
-|---|---|---|
-| **Netload** *(default)* | `dotnet build -c Release` | `NETLOAD`, or the `.bundle` autoload |
-| **IsolatedALC** | `dotnet build -c ALCRelease` (or the `FolderProfile` publish profile) | DevReload |
+| Loader | How |
+|---|---|
+| AutoCAD | `NETLOAD`, or the `.bundle` autoload |
+| DevReload | point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj` |
 
-The marker is an empty `[assembly: CommandClass(NoCommands)]` that stops AutoCAD's `ExtensionLoader` from auto-registering commands. DevReload byte-loads the DLL and registers commands itself via the removable `Utils.AddCommand`, so the marker must be **present** there or the second reload throws `eDuplicateKey`. With `NETLOAD`/`.bundle`, AutoCAD is the only registrar, so it must be **absent** or no commands appear. Gated in `McpPlugin.cs`:
+Under `NETLOAD` and the bundle, AutoCAD's `ExtensionLoader` scans the assembly and registers its `[CommandMethod]`s. DevReload suppresses that scan for assemblies it loads into its own `AssemblyLoadContext` and registers the commands itself through `Utils.AddCommand`, which is removable and so survives repeated reloads.
 
-```csharp
-#if ISOLATED_ALC
-[assembly: CommandClass(typeof(Acd.Mcp.NoCommands))]
-public class NoCommands { }
-#endif
-```
-
-`Acd.Mcp.csproj` defines the symbol two ways: the `ALCDebug` / `ALCRelease` configurations set it directly, and a `Target` also sets it whenever `IsolatedAlc=true` (the `FolderProfile` publish path). The `Target` is needed because the publish profile is imported *after* the project body, so a `PropertyGroup` keyed on `IsolatedAlc` would miss it.
-
-### NETLOAD (default)
+### NETLOAD
 
 1. `dotnet build Acd.Mcp.csproj -c Release -p:Platform=x64`
-2. In AutoCAD: `NETLOAD` → `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll`
+2. In AutoCAD: `NETLOAD` -> `src/Autocad/Acd.Mcp/bin/Release/Acd.Mcp.dll`
 3. `ACDMCP_PING` to verify (the pipe auto-starts on first idle).
 
 ### DevReload
 
-Build with `dotnet build Acd.Mcp.csproj -c ALCRelease -p:Platform=x64`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`.
+Build with `dotnet build Acd.Mcp.csproj -c Release -p:Platform=x64`. [DevReload](https://github.com/shtirlitsDva/DevReload): point it at `src/Autocad/Acd.Mcp/Acd.Mcp.csproj`.
 
 ## Install
 

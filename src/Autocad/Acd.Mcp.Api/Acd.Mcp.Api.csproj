@@ -1,10 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <AssemblyName>Acd.Mcp.Api</AssemblyName>
     <RootNamespace>Acd.Mcp.Api</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Configurations>Debug;Release;ALCDebug;ALCRelease</Configurations>
+    <Configurations>Debug;Release</Configurations>
     <Platforms>x64</Platforms>
   </PropertyGroup>
 
@@ -25,20 +25,12 @@
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCDebug|x64'">
-    <OutputPath>bin\Debug\</OutputPath>
-    <DebugType>full</DebugType>
-  </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCRelease|x64'">
-    <OutputPath>bin\Release\</OutputPath>
-    <DebugType>full</DebugType>
-  </PropertyGroup>
 
   <ItemGroup>
     <!-- AutoCAD 2025 managed APIs (Autodesk-official package, AutoCAD.NET 25.0.1

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <Configurations>Debug;Release;ALCDebug;ALCRelease</Configurations>
+    <Configurations>Debug;Release</Configurations>
     <Platforms>x64</Platforms>
   </PropertyGroup>
 
@@ -18,20 +18,12 @@
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCDebug|x64'">
-    <OutputPath>bin\Debug\</OutputPath>
-    <DebugType>full</DebugType>
-  </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <OutputPath>bin\Release\</OutputPath>
     <DebugType>full</DebugType>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ALCRelease|x64'">
-    <OutputPath>bin\Release\</OutputPath>
-    <DebugType>full</DebugType>
-  </PropertyGroup>
 
   <ItemGroup>
     <!-- Share the wire-domain types with the plugin via linked compile. Both files
